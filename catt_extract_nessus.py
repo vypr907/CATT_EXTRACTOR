@@ -6,8 +6,8 @@ from io import StringIO
 
 # Configuration
 NESSUS_OP_URL = "https://172.21.110.29:1241"
-USERNAME = 'your_username'
-PASSWORD = 'your_password'
+USERNAME = "nessus"
+PASSWORD_OP = "PaaNT3chRefre$h"
 SCAN_ID = 123  # Replace with the actual scan ID
 
 # Step 1: Authenticate and get token
