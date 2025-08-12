@@ -4,15 +4,20 @@ import time
 import pandas as pd
 from io import StringIO
 
-# Configuration
+# Configuration - #Operational Suite
 NESSUS_OP_URL = "https://172.21.110.29:1241"
 USERNAME = "nessus"
-PASSWORD_OP = "PaaNT3chRefre$h"
-SCAN_ID = 123  # Replace with the actual scan ID
+PASSWORD_OP = "PaaNT3chRefre$h" 
+# - #Test Suite
+NESSUS_IT_URL = "https://172.22.110:1241"
+PASSWORD_IT = "PaaNT3st$uiTe"
+
+# Scan IDs
+SCAN_ID = 596  # PAAN RHEL 8 FTPS DISA STIG Scan
 
 # Step 1: Authenticate and get token
-login_data = json.dumps({'username': USERNAME, 'password': PASSWORD}).encode('utf-8')
-req = urllib.request.Request(f'{NESSUS_URL}/session', data=login_data, headers={'Content-Type': 'application/json'}, method='POST')
+login_data = json.dumps({'username': USERNAME, 'password': PASSWORD_OP}).encode('utf-8')
+req = urllib.request.Request(f'{NESSUS_OP_URL}/session', data=login_data, headers={'Content-Type': 'application/json'}, method='POST')
 with urllib.request.urlopen(req) as response:
     token = json.loads(response.read().decode('utf-8'))['token']
 
