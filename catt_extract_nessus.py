@@ -5,6 +5,10 @@ import pandas as pd
 import xml.etree.ElementTree as ET
 from io import StringIO
 import ssl # For SSL bypass
+from dotenv import load_dotenv
+import os
+
+load_dotenv()  # Load environment variables from .env file
 
 # Disable SSL verification (not recommended for production)
 # Note: This is insecure and should only be used in trusted environments.
@@ -13,12 +17,12 @@ context.check_hostname = False;
 context.verify_mode = ssl.CERT_NONE
 
 # Configuration - #Operational Suite
-NESSUS_OP_URL = "https://172.21.110.29:1241"
-USERNAME = "nessus"
-PASSWORD_OP = "PaaNT3chRefre$h" 
+NESSUS_OP_URL = os.getenv('NESSUS_OP_URL')
+USERNAME = os.getenv('NESSUS_USERNAME')
+PASSWORD_OP = os.getenv('NESSUS_OP_PASSWORD')
 # - #Test Suite
-NESSUS_IT_URL = "https://172.22.110:1241"
-PASSWORD_IT = "PaaNT3st$uiTe"
+NESSUS_IT_URL = os.getenv('NESSUS_IT_URL')
+PASSWORD_IT = os.getenv('NESSUS_IT_PASSWORD')
 
 # Scan IDs
 SCAN_ID = 1182
