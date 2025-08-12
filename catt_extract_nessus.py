@@ -2,8 +2,9 @@ import urllib.request
 import json
 import time
 import pandas as pd
+import xml.etree.ElementTree as ET
 from io import StringIO
-import ssl
+import ssl # For SSL bypass
 
 # Disable SSL verification (not recommended for production)
 # Note: This is insecure and should only be used in trusted environments.
@@ -20,7 +21,9 @@ NESSUS_IT_URL = "https://172.22.110:1241"
 PASSWORD_IT = "PaaNT3st$uiTe"
 
 # Scan IDs
-SCAN_ID = 596  # PAAN RHEL 8 FTPS DISA STIG Scan
+SCAN_ID = 1182
+SCAN_RHEL8_IT = 596
+SCAN_RHEL9_IT = 1182
 
 # Step 1: Authenticate and get token
 login_data = json.dumps({'username': USERNAME, 'password': PASSWORD_OP}).encode('utf-8')
@@ -28,35 +31,69 @@ req = urllib.request.Request(f'{NESSUS_OP_URL}/session', data=login_data, header
 with urllib.request.urlopen(req, context=context) as response:
     token = json.loads(response.read().decode('utf-8'))['token']
 
-# Step 2: Request export of the scan in CSV format (latest history by default)
-export_data = json.dumps({'format': 'csv'}).encode('utf-8')
-req = urllib.request.Request(f'{NESSUS_URL}/scans/{SCAN_ID}/export', data=export_data, headers={'X-Cookie': f'token={token}', 'Content-Type': 'application/json'}, method='POST')
+# Step 2: Request export of the scan in .nessus (XML) format
+export_data = json.dumps({'format': 'nessus'}).encode('utf-8')
+req = urllib.request.Request(f'{NESSUS_OP_URL}/scans/{SCAN_ID}/export', data=export_data, headers={'X-Cookie': f'token={token}', 'Content-Type': 'application/json'}, method='POST')
 with urllib.request.urlopen(req, context=context) as response:
     export_response = json.loads(response.read().decode('utf-8'))
     file_id = export_response['file']
 
 # Step 3: Check export status until ready
 while True:
-    req = urllib.request.Request(f'{NESSUS_URL}/scans/{SCAN_ID}/export/{file_id}/status', headers={'X-Cookie': f'token={token}'})
+    req = urllib.request.Request(f'{NESSUS_OP_URL}/scans/{SCAN_ID}/export/{file_id}/status', headers={'X-Cookie': f'token={token}'})
     with urllib.request.urlopen(req, context=context) as response:
         status = json.loads(response.read().decode('utf-8'))['status']
     if status == 'ready':
         break
     time.sleep(5)
 
-# Step 4: Download the CSV file
-req = urllib.request.Request(f'{NESSUS_URL}/scans/{SCAN_ID}/export/{file_id}/download', headers={'X-Cookie': f'token={token}'})
+# Step 4: Download the .nessus file
+req = urllib.request.Request(f'{NESSUS_OP_URL}/scans/{SCAN_ID}/export/{file_id}/download', headers={'X-Cookie': f'token={token}'})
 with urllib.request.urlopen(req, context=context) as response:
-    csv_content = response.read().decode('utf-8')
+    nessus_content = response.read().decode('utf-8')
 
-# Step 5: Load CSV into pandas DataFrame
-df = pd.read_csv(StringIO(csv_content))
+# Step 5: Parse the .nessus XML content
+root = ET.fromstring(nessus_content)
+ns = {'cm': 'http://www.nessus.org/cm'}
 
-# Step 6: Filter for Cat II findings (assuming 'Severity' column with value 'Medium')
-# Note: In Tenable, Cat II typically maps to Medium severity vulnerabilities.
-cat_ii_df = df[df['Severity'].str.strip().str.lower() == 'medium']
+# List to hold extracted data
+data = []
 
-# Step 7: Export to Excel
-cat_ii_df.to_excel('nessus_cat_ii_findings.xlsx', index=False)
+for report_host in root.findall('.//ReportHost'):
+    host_name = report_host.get('name')  #IP or hostname
+    for report_item in report_host.findall('ReportItem'):
+        result_elem = report_item.find('cm:compliance-result', ns)
+        if result_elem is not None and result_elem.text == 'FAILED':
+            reference_elem = report_item.find('cm:compliance-reference', ns)
+            if reference_elem is not None and reference_elem.text and ('CAT: II' in reference_elem.text or 'CAT|II' in reference_elem.text):
+                # Extract relevant fields (customize as needed)
+                check_name = report_item.find('cm:compliance-check-name', ns).text if report_item.find('cm:compliance-check-name', ns) is not None else ''
+                actual_value = report_item.find('cm:compliance-actual-value', ns).text if report_item.find('cm:compliance-actual-value', ns) is not None else ''
+                policy_value = report_item.find('cm:compliance-policy-value', ns).text if report_item.find('cm:compliance-policy-value', ns) is not None else ''
+                audit_file = report_item.find('cm:compliance-audit-file', ns).text if report_item.find('cm:compliance-audit-file', ns) is not None else ''
+                see_also = report_item.find('cm:compliance-see-also', ns).text if report_item.find('cm:compliance-see-also', ns) is not None else ''
+                solution = report_item.find('cm:compliance-solution', ns).text if report_item.find('cm:compliance-solution', ns) is not None else ''
+                info = report_item.find('cm:compliance-info', ns).text if report_item.find('cm:compliance-info', ns) is not None else ''
+                
+                data.append({
+                    'Host': host_name,
+                    'Plugin ID': report_item.get('pluginID'),
+                    'Check Name': check_name,
+                    'Result': 'FAILED',
+                    'Reference': reference_elem.text,
+                    'Actual Value': actual_value,
+                    'Policy Value': policy_value,
+                    'Audit File': audit_file,
+                    'See Also': see_also,
+                    'Solution': solution,
+                    'Info': info,
+                    # Add more fields like description = report_item.find('description').text if needed
+                })
 
-print('Cat II findings exported to nessus_cat_ii_findings.xlsx')
+# Step 6: Convert to DataFram and export to Excel
+if data:
+    df = pd.DataFrame(data)
+    df.to_excel('nessus_cat_ii_findings.xlsx', index=False)
+    print('Cat II findings exported to nessus_cat_ii_findings.xlsx')
+else:
+    print('No Cat II findings found.')
