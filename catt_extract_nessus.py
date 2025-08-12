@@ -67,7 +67,15 @@ for report_host in root.findall('.//ReportHost'):
             reference_elem = report_item.find('cm:compliance-reference', ns)
             if reference_elem is not None and reference_elem.text and ('CAT: II' in reference_elem.text or 'CAT|II' in reference_elem.text):
                 # Extract relevant fields (customize as needed)
-                check_name = report_item.find('cm:compliance-check-name', ns).text if report_item.find('cm:compliance-check-name', ns) is not None else ''
+                full_check_name = report_item.find('cm:compliance-check-name', ns).text if report_item.find('cm:compliance-check-name', ns) is not None else ''
+
+                # Split the check name into STIG ID and Description
+                if ' - ' in full_check_name:
+                    stig_id, description = full_check_name.split(' - ', 1)
+                else:
+                    stig_id = full_check_name
+                    description = ''
+
                 actual_value = report_item.find('cm:compliance-actual-value', ns).text if report_item.find('cm:compliance-actual-value', ns) is not None else ''
                 policy_value = report_item.find('cm:compliance-policy-value', ns).text if report_item.find('cm:compliance-policy-value', ns) is not None else ''
                 audit_file = report_item.find('cm:compliance-audit-file', ns).text if report_item.find('cm:compliance-audit-file', ns) is not None else ''
@@ -78,7 +86,9 @@ for report_host in root.findall('.//ReportHost'):
                 data.append({
                     'Host': host_name,
                     'Plugin ID': report_item.get('pluginID'),
-                    'Check Name': check_name,
+                    'STIG ID': stig_id.strip(),
+                    'Description': description.strip(),
+                    'Full Check Name': full_check_name,
                     'Result': 'FAILED',
                     'Reference': reference_elem.text,
                     'Actual Value': actual_value,
