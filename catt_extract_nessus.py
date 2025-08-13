@@ -269,17 +269,17 @@ def main() -> None:
     configs = {
         'OP': {
             'env': 'OP',
-            'url': os.getenv('NESSUS_URL_OP'),
-            'username': os.getenv('USERNAME'),
-            'password': os.getenv('PASSWORD_OP'),
-            'scan_ids': [123, 456, 789],  # Replace with OP-specific scan IDs
+            'url': os.getenv('NESSUS_OP_URL'),
+            'username': os.getenv('NESSUS_USERNAME'),
+            'password': os.getenv('NESSUS_OP_PASSWORD'),
+            'scan_ids': [1182, 1048, 1054, 1059, 1067],  # Replace with OP-specific scan IDs
             'output_file': 'nessus_cat_ii_findings_OP.xlsx'
         },
         'IT': {
             'env': 'IT',
-            'url': os.getenv('NESSUS_URL_IT'),
-            'username': os.getenv('USERNAME'),
-            'password': os.getenv('PASSWORD_IT'),
+            'url': os.getenv('NESSUS_IT_URL'),
+            'username': os.getenv('NESSUS_USERNAME'),
+            'password': os.getenv('NESSUS_IT_PASSWORD'),
             'scan_ids': [101, 102, 103],  # Replace with IT-specific scan IDs
             'output_file': 'nessus_cat_ii_findings_IT.xlsx'
         }
