@@ -3,3 +3,5 @@
 
 # Ignore .env files
 .env
+# Ignore the .vscode folder
+.vscode/
