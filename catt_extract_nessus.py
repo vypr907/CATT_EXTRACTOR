@@ -107,7 +107,7 @@ for report_host in root.findall('.//ReportHost'):
 # Step 6: Convert to DataFram and export to Excel
 if data:
     df = pd.DataFrame(data)
-    df.to_excel('nessus_cat_ii_findings.xlsx', index=False)
+    df.to_excel('NESSUS_CAT_II_FINDINGS.xlsx', index=False)
     print('Cat II findings exported to nessus_cat_ii_findings.xlsx')
 else:
     print('No Cat II findings found.')
