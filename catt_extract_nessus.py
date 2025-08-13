@@ -240,9 +240,17 @@ def process_environment(env_config: dict) -> None:
                 nessus_content = download_nessus(url, scan_id, file_id, token)
                 root = parse_nessus_content(nessus_content)
                 data = extract_cat_ii_data(root)
-                # Get scan name from XML root attribute
-                scan_name = root.get('name', f'Scan_{scan_id}')
-                sheet_name = scan_name[:31]  # Excel sheet name limit
+                # Get scan name from <Report> element
+                report_elem = root.find('Report')
+                if report_elem is not None:
+                    scan_name = report_elem.get('name', f'Scan_{scan_id}')
+                else:
+                    # Fallback if <Report> is not found
+                    scan_name = f'Scan_{scan_id}'
+                # Ensure sheet name is within Excel limits
+                invalid_chars = r'[\\/:*?"<>|]'
+                sheet_name = ''.join(c for c in scan_name if c not in invalid_chars)[:31]
+                # Create a new sheet for each scan
                 if data:
                     df = pd.DataFrame(data)
                     df.to_excel(writer, sheet_name=sheet_name, index=False)
