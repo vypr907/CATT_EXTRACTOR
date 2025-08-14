@@ -1,11 +1,16 @@
 import urllib.request
 import json
 import pandas as pd
+from dotenv import load_dotenv
+import os
 
-# Configuration - Replace with your details
-SC_URL = 'https://your-security-center-server'  # e.g., https://192.168.1.200
-USERNAME = 'your_username'
-PASSWORD = 'your_password'
+# Configuration - Load from .env file
+
+load_dotenv()
+
+SC_URL = os.getenv('SC_URL')
+USERNAME = os.getenv('USERNAME')
+PASSWORD = os.getenv('PASSWORD')
 # Optional: Add more filters, e.g., for a specific scan or repository
 
 # Step 1: Authenticate and get token
