@@ -1,51 +1,51 @@
 function Get-CACCertificate {
     [CmdletBinding()]
-    param()
+    param ()
 
     $stores = @(
-        'Cert:\CurrentUser\My\',
-        'Cert:\LocalMachine\My\'
+        'Cert:\CurrentUser\My',
+        'Cert:\LocalMachine\My'
     )
 
     $certs = @()
 
     foreach ($store in $stores) {
         $storeCerts = Get-ChildItem $store | Where-Object {
-            # Grab EKU names safely (some may be null)
-            $ekuNames = $_.EnhancedKeyUsageList | ForEach-Object { $_.FriendlyName } | Where-Object { $_ }
-            # Match Client/Smart/PIV/Authentication in EKU or subject
+            $ekuNames = $_.EnhancedKeyUsageList | ForEach-Object {$_.FriendlyName} | Where-Object{$_}
             ($ekuNames -match 'Client|Smart|PIV|Authentication') -or ($_.Subject -match 'PIV|Authentication')
         } | Select-Object @{Name='Store';Expression={$store}},
-                          @{Name='CertObject';Expression={$_}},
-                          Subject, Thumbprint, NotAfter
+        @{Name='CertObject';Expression={$_}},
+        Subject, Thumbprint, NotAfter
+
         $certs += $storeCerts
     }
 
-    if (-not $certs) {
-        Write-Host "No matching CAC/PIV certificates found — showing all personal certs." -ForegroundColor Yellow
-        foreach ($store in $stores) {
+    if(-not $certs) {
+        Write-Host "No matching CAC/PIV certificates found - showing all personal certs." -ForegroundColor Yellow
+        foreach($store in $stores) {
             $storeCerts = Get-ChildItem $store | Select-Object @{Name='Store';Expression={$store}},
-                                                        @{Name='CertObject';Expression={$_}},
-                                                        Subject, Thumbprint, NotAfter
+            @{Name='CertObject';Expression={$_}},
+            Subject, Thumbprint, NotAfter
+
             $certs += $storeCerts
         }
     }
 
     Write-Host "`nCertificates available for selection:`n"
     $i = 1
-    foreach ($cert in $certs) {
+    foreach($cert in $certs){
         Write-Host ("[{0}] Store: {1} | Subject: {2} | Exp: {3}" -f $i, $cert.Store, $cert.Subject, $cert.NotAfter)
         $i++
     }
 
     $selection = Read-Host "`nEnter the number of the certificate to use"
 
-    if ($selection -match '^\d+$' -and [int]$selection -ge 1 -and [int]$selection -le $certs.Count) {
+    if($selection -match '^\d+$' -and [int]$selection -ge 1 -and [int]$selection -le $certs.Count){
         $chosenCert = $certs[[int]$selection - 1].CertObject
         Write-Host "`nYou selected:" -ForegroundColor Green
         $chosenCert | Format-List Subject, Thumbprint, NotAfter
         return $chosenCert
-    } 
+    }
     else {
         Write-Host "Invalid selection." -ForegroundColor Red
         return $null
