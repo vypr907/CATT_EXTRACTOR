@@ -7,27 +7,27 @@ function Get-CACCertificate {
         'Cert:\LocalMachine\My\'
     )
 
-    $certs = foreach ($store in $stores) {
-        Get-ChildItem $store |
-            Where-Object {
-                # Grab all EKU friendly names (null-safe)
-                $ekuNames = $_.EnhancedKeyUsageList | ForEach-Object { $_.FriendlyName } | Where-Object { $_ }
-                # Check if any EKU contains Client/Smart/PIV/Authentication (case-insensitive)
-                ($ekuNames -match 'Client|Smart|PIV|Authentication') -or
-                ($_.Subject -match 'PIV|Authentication')
-            } |
-            Select-Object @{Name='Store';Expression={$store}},
+    $certs = @()
+
+    foreach ($store in $stores) {
+        $storeCerts = Get-ChildItem $store | Where-Object {
+            # Grab EKU names safely (some may be null)
+            $ekuNames = $_.EnhancedKeyUsageList | ForEach-Object { $_.FriendlyName } | Where-Object { $_ }
+            # Match Client/Smart/PIV/Authentication in EKU or subject
+            ($ekuNames -match 'Client|Smart|PIV|Authentication') -or ($_.Subject -match 'PIV|Authentication')
+        } | Select-Object @{Name='Store';Expression={$store}},
                           @{Name='CertObject';Expression={$_}},
                           Subject, Thumbprint, NotAfter
+        $certs += $storeCerts
     }
 
     if (-not $certs) {
         Write-Host "No matching CAC/PIV certificates found — showing all personal certs." -ForegroundColor Yellow
-        $certs = foreach ($store in $stores) {
-            Get-ChildItem $store |
-                Select-Object @{Name='Store';Expression={$store}},
-                              @{Name='CertObject';Expression={$_}},
-                              Subject, Thumbprint, NotAfter
+        foreach ($store in $stores) {
+            $storeCerts = Get-ChildItem $store | Select-Object @{Name='Store';Expression={$store}},
+                                                        @{Name='CertObject';Expression={$_}},
+                                                        Subject, Thumbprint, NotAfter
+            $certs += $storeCerts
         }
     }
 
@@ -39,13 +39,15 @@ function Get-CACCertificate {
     }
 
     $selection = Read-Host "`nEnter the number of the certificate to use"
+
     if ($selection -match '^\d+$' -and [int]$selection -ge 1 -and [int]$selection -le $certs.Count) {
-        $chosenCert = $certs[ [int]$selection - 1 ].CertObject
+        $chosenCert = $certs[[int]$selection - 1].CertObject
         Write-Host "`nYou selected:" -ForegroundColor Green
         $chosenCert | Format-List Subject, Thumbprint, NotAfter
         return $chosenCert
-    } else {
-        Write-Host "Invalid selection. Exiting." -ForegroundColor Red
+    } 
+    else {
+        Write-Host "Invalid selection." -ForegroundColor Red
         return $null
     }
 }
@@ -53,9 +55,7 @@ function Get-CACCertificate {
 # Example usage
 $CACCert = Get-CACCertificate
 if ($CACCert) {
-    # Export for Python
     $exportPath = Join-Path $env:TEMP "cac_cert.xml"
-    $CACCert | Export-CliXml -Path $exportPath
-    Write-Host ""
+    $CACCert | Export-Clixml -Path $exportPath
     Write-Host "Certificate exported to $exportPath" -ForegroundColor Cyan
 }
