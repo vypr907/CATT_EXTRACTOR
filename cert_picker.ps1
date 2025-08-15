@@ -55,7 +55,7 @@ function Get-CACCertificate {
 # Example usage
 $CACCert = Get-CACCertificate
 if ($CACCert) {
-    $exportPath = Join-Path $env:TEMP "cac_cert.xml"
+    $exportPath = Join-Path $env:TEMP "cac_cert_info.xml"
     $CACCert | Export-Clixml -Path $exportPath
     Write-Host "Certificate exported to $exportPath" -ForegroundColor Cyan
 }
