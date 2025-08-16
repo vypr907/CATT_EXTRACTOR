@@ -55,14 +55,25 @@ function Get-CACCertificate {
 # After the user selects a cert:
 $CACCert = Get-CACCertificate
 if ($CACCert) {
-    $exportPath = Join-Path $env:TEMP "cac_cert_info.xml"
+    $exportPath = Join-Path $env:TEMP "cac_cert_info.json"
+
+    # Get EKU friendly names as an array of strings
+    $ekus = @()
+    foreach ($eku in $CACCert.EnhancedKeyUsageList) {
+        if ($eku.FriendlyName) {
+            $ekus += $eku.FriendlyName
+        }
+    }
 
     # Only export Thumbprint (and optional metadata)
-    [PSCustomObject]@{
-        Thumbprint = $CACCert.Thumbprint
-        Store = if ($CACCert.PSPath -like "*CurrentUser*"){"CurrentUser"} else {"LocalMachine"}
-        Subject = $CACCert.Subject
-    } | Export-Clixml -Path $exportPath
-    
+    $certInfo = @{
+        Thumbprint  = $CACCert.Thumbprint
+        Store       = if ($CACCert.PSPath -like "*CurrentUser*"){"CurrentUser"} else {"LocalMachine"}
+        Subject     = $CACCert.Subject
+        EKU         = $ekus
+        NotAfter    = $CACCert.NotAfter
+    }
+
+    $certInfo | ConvertTo-Json | Set-Content -Path $exportPath -Encoding UTF8
     Write-Host "Certificate exported to $exportPath" -ForegroundColor Cyan
 }
