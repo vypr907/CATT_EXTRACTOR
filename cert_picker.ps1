@@ -52,10 +52,17 @@ function Get-CACCertificate {
     }
 }
 
-# Example usage
+# After the user selects a cert:
 $CACCert = Get-CACCertificate
 if ($CACCert) {
     $exportPath = Join-Path $env:TEMP "cac_cert_info.xml"
-    $CACCert | Export-Clixml -Path $exportPath
+
+    # Only export Thumbprint (and optional metadata)
+    [PSCustomObject]@{
+        Thumbprint = $CACCert.Thumbprint
+        Store = if ($CACCert.PSPath -like "*CurrentUser*"){"CurrentUser"} else {"LocalMachine"}
+        Subject = $CACCert.Subject
+    } | Export-Clixml -Path $exportPath
+    
     Write-Host "Certificate exported to $exportPath" -ForegroundColor Cyan
 }
