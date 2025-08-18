@@ -2,14 +2,34 @@ import subprocess
 import os
 import json
 from typing import Any, Dict, Optional
+import requests
+from OpenSSL import crypto
+
+"""
+.SYNOPSIS
+    catt_extract_tsc.py
+    Windows-native Tenable SC client using CAC/PIV certificates.
+
+.DESCRIPTION
+    This script provides a class to interact with Tenable SC using CAC/PIV certificates.
+    It launches a PowerShell script to let the user pick the correct CAC certificate,
+    then uses it for mTLS requests.
+
+.NOTES
+    Author: Steven "vypr" Laszloffy
+    Date:   8-18-2025
+"""
 
 class TSCWindowsCAC:
     """
-    Windows-native Tenable SC client using CAC/PIV certificates.
-    This class always launches a PowerShell script to let the user pick
-    the correct CAC certificate, then uses it for mTLS requests.
+    Tenable Security Center client using a Windows CAC/PIV certificate.
+    - Prompts user once via tsc_cac_native.ps1 to select a certificate.
+    - Reads thumbprint and metadata from JSON file.
+    - Finds cert in Windows store for mTLS requests.
+    - Fully handles exceptions and logging.
     """
-    def __init__(self, base_url: str, ps_native: str, ca_bundle: Optional[str] = None):
+
+    def __init__(self, base_url: str, ps_picker: str, ca_bundle: Optional[str] = None):
         """
         Initialize the TSC client using CAC cert.
 
@@ -18,13 +38,13 @@ class TSCWindowsCAC:
         :param ca_bundle: Optional path to a PEM bundle if custom roots are needed
         """
         self.base_url = base_url.rstrip("/")
-        self.ps_native = ps_native
+        self.ps_picker = ps_picker
         self.ca_bundle = ca_bundle
-
+        self.session = self._create_session()
         # Paths for exporting the selected cert info
         self.cert_info_path = os.path.join(os.environ["TEMP"], "cac_cert_info.json")
 
-        # Launch certificate picker script
+        # Launch certificate picker script once
         self.cert_info = self._pick_cert()
         self.thumbprint = self.cert_info["Thumbprint"]
         print(f"[INFO] Using CAC cert thumbprint: {self.thumbprint}")
@@ -32,54 +52,110 @@ class TSCWindowsCAC:
     # -------------------- Internal methods --------------------
 
     def _pick_cert(self) -> Dict[str, Any]:
-        """Internal: launch PowerShell script to pick the CAC cert and load exported JSON."""
-        if not os.path.exists(self.ps_native):
-            raise FileNotFoundError(f"Certificate picker script not found: {self.ps_native}")
-        
-        try:
-            subprocess.run([
-                "powershell",
-                "-NoProfile",
-                "-ExecutionPolicy", "Bypass",
-                "-File", self.ps_native,
-                "-ExportPath", self.cert_info_path
-            ], check=True)
-        except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"Error running certificate picker script: {e}")
-        
-        if not os.path.exists(self.cert_info_path):
-            raise FileNotFoundError(f"Certificate info file not found: {self.cert_info_path}")
-        
-        try:
-            with open(self.cert_info_path, "r", encoding="utf-8-sig") as f:
-                cert_info = json.load(f)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Error decoding JSON from {self.cert_info_path}: {e}")
-        
+        """
+        Internal: launch PowerShell script to pick the CAC cert and load exported JSON.
+        Only runs the picker script if cert_info_path does not exist.
+        """
+        if os.path.exists(self.cert_info_path):
+            # Cert already picked, just load it. 
+            # Read JSON using utf-8-sig to handle BOM if present
+            try:
+                with open(self.cert_info_path, "r", encoding="utf-8-sig") as f:
+                    cert_info = json.load(f)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Error decoding JSON from {self.cert_info_path}: {e}")
+        else:
+            # Picker script not run yet, run it now
+            print("[*] Launching CAC cert picker...")
+            if not os.path.exists(self.ps_picker):
+                raise FileNotFoundError(f"Certificate picker script not found: {self.ps_picker}")
+            try:
+                subprocess.run([
+                    "powershell",
+                    "-NoProfile",
+                    "-ExecutionPolicy", "Bypass",
+                    "-File", self.ps_picker,
+                    "-ExportPath", self.cert_info_path
+                ], check=True)
+            except subprocess.CalledProcessError as e:
+                raise RuntimeError(f"Error running certificate picker script: {e}")
+            if not os.path.exists(self.cert_info_path):
+                raise FileNotFoundError(f"Certificate info file not found: {self.cert_info_path}")
+            try:
+                with open(self.cert_info_path, "r", encoding="utf-8-sig") as f:
+                    cert_info = json.load(f)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Error decoding JSON from {self.cert_info_path}: {e}")
+
         required_keys = {"Thumbprint", "Subject", "Issuer", "NotBefore", "NotAfter", "EKUs"}
         if not required_keys.issubset(cert_info.keys()):
             raise ValueError(f"Certificate info missing required keys: {required_keys - cert_info.keys()}")
-        
+
         return cert_info
     
+    # --------------------- Requests Session ---------------------
+    def _create_session(self) -> requests.Session:
+        """
+        Create a requests session with mTLS using the selected CAC cert.
+        """
+        session = requests.Session()
 
+        # Load the certificate from the Windows store using the thumbprint
+        cert_pfx_path, cert_pfx_pass = self._export_cert_to_pfx()
+        session.cert = (cert_pfx_path, cert_pfx_pass)
+
+        if self.ca_bundle:
+            # If a CA bundle is provided, use it for SSL verification
+            session.verify = self.ca_bundle
+        else:
+            # Default to system CA store if no bundle provided
+            session.verify = True
+        
+        return session
+
+    def _export_cert_to_pfx(self) -> tuple[str, Optional[str]]:
+        """
+        Export the selected certificate from the Windows store to a PFX file.
+        Returns the path to the PFX file and its password (if any).
+        """
+        import tempfile
+        import subprocess
+
+        pfx_path = os.path.join(tempfile.gettempdir(),f"{self.cert_info['Thumbprint']}.pfx")
+
+        # Call PowerShell to export the cert to PFX
+        export_script = f"""
+        $thumb = '{self.cert_info['Thumbprint']}'
+        $store = New-Object System.Security.Cryptography.X509Certificates.X509Store('My', 'LocalMachine')
+        $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
+        $cert = $store.Certificates | Where-Object {{$_.Thumbprint -eq $thumb}}
+        if(-not $cert){{throw 'Certificate not found'}}
+        $pwd = ConvertTo-SecureString -String '' -Force -AsPlainText
+        Export-PfxCertificate -Cert $cert -FilePath '{pfx_path}' -Password $pwd
+        $store.Close()
+        """
+        subprocess.run(["powershell", "-NoProfile", "-Command", export_script], check=True)
+        return pfx_path, ""
+
+    # ------------------ Internal API calls ------------------
     def _call(self, path: str, method: str = "GET",
               body: Optional[Dict[str, Any]] = None,
               query: Optional[Dict[str, Any]] = None,
               headers: Optional[Dict[str, str]] = None) -> Any:
         """
-        Internal: call PowerShell helper (tsc_cac_native.ps1) with mTLS using selected cert.
+        Internal: Use previously selected cert with mTLS using selected cert.
         """
         args = [
             "powershell", 
             "-NoProfile", 
             "-ExecutionPolicy", "Bypass",
-            "-File", self.ps_native,
-            "-ExportPath", self.cert_info_path, # reuse same cert JSON
+            "-File", self.ps_picker,
+            #"-ExportPath", self.cert_info_path, # reuse same cert JSON
             "-BaseUrl", self.base_url,
             "-Path", path,
             "-Method", method,
-            "-Thumbprint", self.thumbprint
+            #"-Thumbprint", self.thumbprint
+            "-Thumbprint", self.cert_info["Thumbprint"]
         ]
         
         if body is not None:
