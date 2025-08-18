@@ -51,7 +51,7 @@ class TSCWindowsCAC:
             raise FileNotFoundError(f"Certificate info file not found: {self.cert_info_path}")
         
         try:
-            with open(self.cert_info_path, "r", encoding="utf-8") as f:
+            with open(self.cert_info_path, "r", encoding="utf-8-sig") as f:
                 cert_info = json.load(f)
         except json.JSONDecodeError as e:
             raise ValueError(f"Error decoding JSON from {self.cert_info_path}: {e}")

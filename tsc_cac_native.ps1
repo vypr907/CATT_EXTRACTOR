@@ -128,7 +128,7 @@ $exportData = @{
 }
 
 # Write to file
-$exportData | ConvertTo-Json -Compress | Out-File -Encoding utf8 $ExportPath
+$exportData | ConvertTo-Json -Compress | Set-Content -Path $ExportPath -Encoding UTF8
 
 Write-Host "`n[+] Certificate metadata exported to $outFile" -ForegroundColor Green
 Write-Host "[+] Ready to use certificate (private key remains safely in the Windows store)" -ForegroundColor Green
