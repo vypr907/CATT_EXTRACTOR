@@ -116,17 +116,19 @@ $selectedCert = $certMap[[int]$choice]
 # ================================
 # Export Metadata (no private key!)
 # ================================
-$exportData = [PSCustomObject]@{
+$exportData = @{
     Subject    = $selectedCert.Subject
     Issuer     = $selectedCert.Issuer
     Thumbprint = $selectedCert.Thumbprint
     NotBefore  = $selectedCert.NotBefore
     NotAfter   = $selectedCert.NotAfter
-    EKUs       = (Get-EKUString $selectedCert.EnhancedKeyUsageList) -join "; "
+    EKUs       = ($selectedCert.EnhancedKeyUsageList | ForEach-Object {
+        if ($_.FriendlyName){$_.FriendlyName} else { $_.Value}
+    }) -join "; "
 }
 
 # Write to file
-$exportData | ConvertTo-Json | Out-File -Encoding utf8 $ExportPath
+$exportData | ConvertTo-Json -Compress | Out-File -Encoding utf8 $ExportPath
 
 Write-Host "`n[+] Certificate metadata exported to $outFile" -ForegroundColor Green
 Write-Host "[+] Ready to use certificate (private key remains safely in the Windows store)" -ForegroundColor Green

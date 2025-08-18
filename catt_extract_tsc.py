@@ -33,7 +33,7 @@ class TSCWindowsCAC:
 
     def _pick_cert(self) -> Dict[str, Any]:
         """Internal: launch PowerShell script to pick the CAC cert and load exported JSON."""
-        if not os.path.exists(self.ps_cert_picker):
+        if not os.path.exists(self.ps_native):
             raise FileNotFoundError(f"Certificate picker script not found: {self.ps_native}")
         
         try:
