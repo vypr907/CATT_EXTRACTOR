@@ -15,6 +15,10 @@
     Date:   8-18-2025
 #>
 
+param(
+    [string]$ExportPath = "$env:TEMP\cac_cert_info.json"
+)
+
 # ========================
 # Helper function: Get EKU
 # ========================
@@ -73,6 +77,9 @@ if (-not $certs -or $certs.Count -eq 0) {
     throw "No certificates found in any accessible store."
 }
 
+# =====================================
+# Filter for CAC/PIV certificates with Client Authentication EKU
+# =====================================
 $filteredCerts = $certs | Where-Object {
     # Must have private key + Client Authentication EKU
     $_.HasPrivateKey -and
@@ -119,8 +126,7 @@ $exportData = [PSCustomObject]@{
 }
 
 # Write to file
-$outFile = Join-Path -Path $PSScriptRoot -ChildPath "selected_cac_metadata.json"
-$exportData | ConvertTo-Json | Out-File -Encoding utf8 $outFile
+$exportData | ConvertTo-Json | Out-File -Encoding utf8 $ExportPath
 
 Write-Host "`n[+] Certificate metadata exported to $outFile" -ForegroundColor Green
 Write-Host "[+] Ready to use certificate (private key remains safely in the Windows store)" -ForegroundColor Green
