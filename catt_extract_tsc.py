@@ -1,66 +1,32 @@
 import subprocess
 import os
 import json
-import xml.etree.ElementTree as ET
 from typing import Any, Dict, Optional
 
 class TSCWindowsCAC:
-    def __init__(self, base_url: str, ps_cert_picker: str, ca_bundle: Optional[str] = None):
+    def __init__(self, base_url: str, ps_native: str, ca_bundle: Optional[str] = None):
         """
         Windows-native Tenable SC client using CAC cert.
 
         :param base_url: Base URL of Tenable SC
-        :param ps_cert_picker: Path to your cert_picker.ps1 script
+        :param ps_native: Path to your tsc_cac_native.ps1 script
         :param ca_bundle: Optional path to a PEM bundle if custom roots are needed
         """
         self.base_url = base_url.rstrip("/")
-        self.ps_cert_picker = ps_cert_picker
+        self.ps_native = ps_native
         self.ca_bundle = ca_bundle
-
-        # Launch cert picker and read thumbprint
-        self.thumbprint = self._pick_cert()
-        print(f"[INFO] Using CAC cert thumbprint: {self.thumbprint}")
-
-    def _pick_cert(self) -> str:
-        """Run the PowerShell cert picker and read the exported XML thumbprint."""
-        # Run picker
-        subprocess.run([
-            "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-            "-File", self.ps_cert_picker
-        ], check=True)
-
-        # Read exported XML (default temp path)
-        xml_path = os.path.join(os.environ['TEMP'], 'cac_cert_info.xml')
-        if not os.path.exists(xml_path):
-            raise FileNotFoundError(f"Cert picker did not export XML to {xml_path}")
-
-        # Parse thumbprint
-        tree = ET.parse(xml_path)
-        root = tree.getroot()
-        ns = {'ps': 'http://schemas.microsoft.com/powershell/2004/04'}
-
-        thumbprint = None
-        for prop in root.findall('.//ps:Property', ns):
-            if prop.get('Name') == 'Thumbprint':
-                thumbprint = prop.find('ps:Value', ns).text
-        if not thumbprint:
-            raise ValueError("Thumbprint not found in exported XML")
-        return thumbprint
 
     def _call(self, path: str, method: str = "GET",
               body: Optional[Dict[str, Any]] = None,
               query: Optional[Dict[str, Any]] = None,
               headers: Optional[Dict[str, str]] = None) -> Any:
         """Internal: call PowerShell helper (tsc_cac_native.ps1) with mTLS using selected cert."""
-        # Assuming you already have tsc_cac_native.ps1 in same folder as picker
-        ps_native = os.path.join(os.path.dirname(self.ps_cert_picker), "tsc_cac_native.ps1")
         args = [
             "powershell", "-NoProfile", "-ExecutionPolicy", "Bypass",
-            "-File", ps_native,
+            "-File", self.ps_native,
             "-BaseUrl", self.base_url,
             "-Path", path,
-            "-Method", method,
-            "-Thumbprint", self.thumbprint
+            "-Method", method
         ]
         if body is not None:
             args += ["-BodyJson", json.dumps(body)]
