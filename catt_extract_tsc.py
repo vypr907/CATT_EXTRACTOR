@@ -2,8 +2,8 @@ import subprocess
 import os
 import json
 from typing import Any, Dict, Optional
-import requests
-from OpenSSL import crypto
+#import requests
+#from OpenSSL import crypto
 
 """
 .SYNOPSIS
@@ -25,21 +25,24 @@ class TSCWindowsCAC:
     Tenable Security Center client using a Windows CAC/PIV certificate.
     - Prompts user once via tsc_cac_native.ps1 to select a certificate.
     - Reads thumbprint and metadata from JSON file.
-    - Finds cert in Windows store for mTLS requests.
+    - API calls: PowerShell helper (no prompts) via Schannel mTLS using thumbprint.
     - Fully handles exceptions and logging.
+    - Safe: private keys are never exported, only metadata is saved.
     """
 
-    def __init__(self, base_url: str, ps_picker: str, ca_bundle: Optional[str] = None):
+    def __init__(self, base_url: str, ps_picker: str, api_script: str, ca_bundle: Optional[str] = None):
         """
         Initialize the TSC client using CAC cert.
 
         :param base_url: Base URL of Tenable SC
         :param ps_native: Path to your tsc_cac_native.ps1 script
+        :param api_script: Path to your tsc_cac_api.ps1 script
         :param ca_bundle: Optional path to a PEM bundle if custom roots are needed
         """
         self.base_url = base_url.rstrip("/")
         self.ps_picker = ps_picker
-        self.ca_bundle = ca_bundle
+        self.api_script = api_script
+        self.ca_bundle = ca_bundle # not used in this version, but can be passed for custom CA bundles
         self.session = self._create_session()
         # Paths for exporting the selected cert info
         self.cert_info_path = os.path.join(os.environ["TEMP"], "cac_cert_info.json")
@@ -94,6 +97,10 @@ class TSCWindowsCAC:
         return cert_info
     
     # --------------------- Requests Session ---------------------
+    ''' Removing requests.Session and OpenSSL crypto as they are not used in this version.
+    This version uses PowerShell for mTLS and does not require direct requests or OpenSSL handling.
+    Due to the secure nature of the environment, we are unable to export the private key.
+
     def _create_session(self) -> requests.Session:
         """
         Create a requests session with mTLS using the selected CAC cert.
@@ -136,12 +143,18 @@ class TSCWindowsCAC:
         """
         subprocess.run(["powershell", "-NoProfile", "-Command", export_script], check=True)
         return pfx_path, ""
+    
+    '''
 
     # ------------------ Internal API calls ------------------
     def _call(self, path: str, method: str = "GET",
               body: Optional[Dict[str, Any]] = None,
               query: Optional[Dict[str, Any]] = None,
-              headers: Optional[Dict[str, str]] = None) -> Any:
+              headers: Optional[Dict[str, str]] = None,
+              ignore_ssl_errors: bool = False) -> Any:
+        '''
+        Delegate the HTTPS request to the PowerShell API helper, which uses Schannel + certificate thumbprint.
+        '''
         """
         Internal: Use previously selected cert with mTLS using selected cert.
         """
@@ -149,23 +162,25 @@ class TSCWindowsCAC:
             "powershell", 
             "-NoProfile", 
             "-ExecutionPolicy", "Bypass",
-            "-File", self.ps_picker,
-            #"-ExportPath", self.cert_info_path, # reuse same cert JSON
+            "-File", self.api_script,
             "-BaseUrl", self.base_url,
             "-Path", path,
             "-Method", method,
-            #"-Thumbprint", self.thumbprint
-            "-Thumbprint", self.cert_info["Thumbprint"]
+            "-Thumbprint", self.thumbprint
+            #"-Thumbprint", self.cert_info["Thumbprint"]
         ]
         
         if body is not None:
             args += ["-BodyJson", json.dumps(body)]
         if query:
+            # Pass a hashtable literal: @{key='value';...}
             qlit = "@{ " + "; ".join(f"{k}='{v}'" for k, v in query.items()) + " }"
             args += ["-Query", qlit]
         if headers:
             hlit = "@{ " + "; ".join(f"{k}='{v}'" for k, v in headers.items()) + " }"
             args += ["-Headers", hlit]
+        if ignore_ssl_errors:
+            args += ["-IgnoreSslErrors"]
         if self.ca_bundle:
             args += ["-CaBundlePath", self.ca_bundle]
 
@@ -209,9 +224,10 @@ class TSCWindowsCAC:
 if __name__ == "__main__":
     BASE_URL = "https://sccv03.csp.noaa.gov"
     PICKER_SCRIPT = r"G:\My Drive\CATT_EXTRACTOR\tsc_cac_native.ps1"  # adjust path
+    API_SCRIPT = r"G:\My Drive\CATT_EXTRACTOR\tsc_cac_api.ps1"  # adjust path
     CA_BUNDLE = None  # optional PEM bundle if needed
 
-    tsc = TSCWindowsCAC(BASE_URL, PICKER_SCRIPT, ca_bundle=CA_BUNDLE)
+    tsc = TSCWindowsCAC(BASE_URL, PICKER_SCRIPT, API_SCRIPT,ca_bundle=CA_BUNDLE)
 
     print("== /rest/system ==")
     print(json.dumps(tsc.system(), indent=2))
