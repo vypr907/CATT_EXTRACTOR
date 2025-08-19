@@ -6,7 +6,9 @@ param(
     [string]$BodyJson,
     [hashtable]$Query,
     [hashtable]$Headers,
-    [switch]$IgnoreSslErrors
+    [switch]$IgnoreSslErrors,
+    [string]$QueryJson,
+    [string]$HeadersJson
 )
 
 # Build URL
@@ -21,6 +23,17 @@ $irParams = @{
     CertificateThumbprint   = $Thumbprint
     ErrorAction             = 'Stop'
 }
+
+# Convert JSON into hashtables when provided
+if ($QueryJson){
+    $Query = ConvertFrom-Json -InputObject $QueryJson
+}
+if ($HeadersJson){
+    $Headers = ConvertFrom-Json -InputObject $HeadersJson
+}
+#if ($BodyJson){
+#    $Body = ConvertFrom-Json -InputObject $BodyJson
+#}
 
 if ($Query)   { $irParams['Body'] = $null; $irParams['Uri'] = ($uri + '?' + ($Query.GetEnumerator() | ForEach-Object { "{0}={1}" -f [uri]::EscapeDataString($_.Key), [uri]::EscapeDataString([string]$_.Value) } -join "&")) }
 if ($Headers) { $irParams['Headers'] = $Headers }

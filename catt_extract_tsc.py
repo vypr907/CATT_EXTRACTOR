@@ -30,7 +30,7 @@ class TSCWindowsCAC:
     - Safe: private keys are never exported, only metadata is saved.
     """
 
-    def __init__(self, base_url: str, ps_picker: str, api_script: str, ca_bundle: Optional[str] = None):
+    def __init__(self, base_url: str, ps_picker: str, api_script: str, ca_bundle: Optional[str] = None, force_repick: bool = False):
         """
         Initialize the TSC client using CAC cert.
 
@@ -38,21 +38,41 @@ class TSCWindowsCAC:
         :param ps_native: Path to your tsc_cac_native.ps1 script
         :param api_script: Path to your tsc_cac_api.ps1 script
         :param ca_bundle: Optional path to a PEM bundle if custom roots are needed
+        :param force_repick: If True, always prompt for cert selection
         """
         self.base_url = base_url.rstrip("/")
         self.ps_picker = ps_picker
         self.api_script = api_script
         self.ca_bundle = ca_bundle # not used in this version, but can be passed for custom CA bundles
-        self.session = self._create_session()
+        #self.session = self._create_session()
+        
         # Paths for exporting the selected cert info
         self.cert_info_path = os.path.join(os.environ["TEMP"], "cac_cert_info.json")
 
-        # Launch certificate picker script once
+        # Optionally force repicking the cert
+        if force_repick:
+            self.clear_cert_cache()
+
+        # Launch certificate picker script
         self.cert_info = self._pick_cert()
         self.thumbprint = self.cert_info["Thumbprint"]
         print(f"[INFO] Using CAC cert thumbprint: {self.thumbprint}")
 
-    # -------------------- Internal methods --------------------
+    # -------------------- Cert Handling Methods --------------------
+
+    def clear_cert_cache(self) -> None:
+        """
+        Clear the cached cert info.
+        """
+        if os.path.exists(self.cert_info_path):
+            try:
+                os.remove(self.cert_info_path)
+                print("[INFO] Cleared cached certificate info.")
+            except OSError as e:
+                print(f"[ERROR] Failed to clear cert cache: {e}")
+        else:
+            print("[INFO] No cached certificate info found.")
+
 
     def _pick_cert(self) -> Dict[str, Any]:
         """
@@ -174,11 +194,14 @@ class TSCWindowsCAC:
             args += ["-BodyJson", json.dumps(body)]
         if query:
             # Pass a hashtable literal: @{key='value';...}
-            qlit = "@{ " + "; ".join(f"{k}='{v}'" for k, v in query.items()) + " }"
-            args += ["-Query", qlit]
+            #qlit = "@{ " + "; ".join(f"{k}='{v}'" for k, v in query.items()) + " }"
+            #args += ["-Query", qlit]
+            # CHANGING TO JSON
+            args += ["-QueryJson", json.dumps(query)]
         if headers:
-            hlit = "@{ " + "; ".join(f"{k}='{v}'" for k, v in headers.items()) + " }"
-            args += ["-Headers", hlit]
+            #hlit = "@{ " + "; ".join(f"{k}='{v}'" for k, v in headers.items()) + " }"
+            #args += ["-Headers", hlit]
+            args += ["-HeadersJson", json.dumps(headers)]
         if ignore_ssl_errors:
             args += ["-IgnoreSslErrors"]
         if self.ca_bundle:
