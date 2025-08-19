@@ -250,7 +250,7 @@ if __name__ == "__main__":
     API_SCRIPT = r"G:\My Drive\CATT_EXTRACTOR\tsc_cac_api.ps1"  # adjust path
     CA_BUNDLE = None  # optional PEM bundle if needed
 
-    tsc = TSCWindowsCAC(BASE_URL, PICKER_SCRIPT, API_SCRIPT,ca_bundle=CA_BUNDLE)
+    tsc = TSCWindowsCAC(BASE_URL, PICKER_SCRIPT, API_SCRIPT, force_repick=True)
 
     print("== /rest/system ==")
     print(json.dumps(tsc.system(), indent=2))
