@@ -59,13 +59,17 @@ try {
     $resp = Invoke-RestMethod @irParams
     $json = $resp | ConvertTo-Json -Depth 6
     if (-not $json) { $json = "{}" }
-    [Console]::Out.Write($json)
+    #[Console]::Out.Write($json) # Can't use this due to ContrainedLanguage Mode restrictions
+    Write-Host $json -ForegroundColor Green
+    exit 0
 } catch {
     $msg = @{
         error = $_.Exception.Message
         uri   = $uri
         code  = ($_.Exception.Response.StatusCode.value__ | Out-String).Trim()
     } | ConvertTo-Json
-    [Console]::Error.WriteLine($msg)
+    #[Console]::Error.WriteLine($msg) # Can't use this due to ContrainedLanguage Mode restrictions
+    Write-Error ($msg | ConvertTo-Json -Compress)
+    # Exit with non-zero code to indicate failure
     exit 1
 }

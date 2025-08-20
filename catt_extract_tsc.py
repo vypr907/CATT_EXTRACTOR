@@ -178,38 +178,67 @@ class TSCWindowsCAC:
         """
         Internal: Use previously selected cert with mTLS using selected cert.
         """
+        
+        # Build args and print all request details for debugging
+        debug_info = {
+            "path": path,
+            "method": method,
+            "body": body,
+            "query": query,
+            "headers": headers,
+            "ignore_ssl_errors": ignore_ssl_errors,
+            "ca_bundle": self.ca_bundle,
+            "thumbprint": self.thumbprint,
+            "api_script": self.api_script
+        }
+        print("[DEBUG] Request parameters:")
+        for k, v in debug_info.items():
+            print(f"  {k}: {v}")
+
+        if body is not None:
+            body_json = json.dumps(body)
+        else:
+            body_json = None
+
+        if query:
+            query_str = "&".join(f"{k}={v}" for k, v in query.items())
+            path_with_query = f"{path}?{query_str}"
+        else:
+            path_with_query = path
+
         args = [
             "powershell", 
             "-NoProfile", 
             "-ExecutionPolicy", "Bypass",
             "-File", self.api_script,
             "-BaseUrl", self.base_url,
-            "-Path", path,
+            "-Path", path_with_query,
             "-Method", method,
             "-Thumbprint", self.thumbprint
-            #"-Thumbprint", self.cert_info["Thumbprint"]
         ]
-        
-        if body is not None:
-            args += ["-BodyJson", json.dumps(body)]
-        if query:
-            # Pass a hashtable literal: @{key='value';...}
-            #qlit = "@{ " + "; ".join(f"{k}='{v}'" for k, v in query.items()) + " }"
-            #args += ["-Query", qlit]
-            # CHANGING TO JSON
-            args += ["-QueryJson", json.dumps(query)]
+
         if headers:
-            #hlit = "@{ " + "; ".join(f"{k}='{v}'" for k, v in headers.items()) + " }"
-            #args += ["-Headers", hlit]
             args += ["-HeadersJson", json.dumps(headers)]
         if ignore_ssl_errors:
             args += ["-IgnoreSslErrors"]
         if self.ca_bundle:
             args += ["-CaBundlePath", self.ca_bundle]
+        if body_json:
+            args += ["-BodyJson", body_json]
+
+        print("[DEBUG] PowerShell command arguments:")
+        for arg in args:
+            print(f"  {arg}")
 
         proc = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        print("[DEBUG] STDOUT:\n", proc.stdout)
+        print("[DEBUG] STDERR:\n", proc.stderr)
         if proc.returncode != 0:
-            raise RuntimeError(f"PowerShell call failed (rc={proc.returncode}).\nSTDERR:\n{proc.stderr}")
+            print("[ERROR] PowerShell call failed.")
+            print(f"[ERROR] Return code: {proc.returncode}")
+            print(f"[ERROR] STDERR: {proc.stderr}")
+            print(f"[ERROR] STDOUT: {proc.stdout}")
+            raise RuntimeError(f"PowerShell call failed (rc={proc.returncode}).\nSTDERR:\n{proc.stderr}\nSTDOUT:\n{proc.stdout}")
 
         out = proc.stdout.strip()
         if not out:
@@ -217,6 +246,8 @@ class TSCWindowsCAC:
         try:
             return json.loads(out)
         except json.JSONDecodeError:
+            print("[ERROR] Failed to parse JSON from PowerShell output.")
+            print(f"[ERROR] Output: {out}")
             return out
 
     # ------------------ Convenience methods ------------------
@@ -256,5 +287,11 @@ if __name__ == "__main__":
     print(json.dumps(tsc.system(), indent=2))
 
     print("\n== /rest/scanResult (first page) ==")
-    results = tsc.list_scan_results(fields="id,name,status,repository,createdTime")
+    # Add Accept header for troubleshooting
+    headers = {"Accept": "application/json"}
+    results = tsc.list_scan_results(fields="id,name,status,repository,createdTime", filters=None)
+    # Pass headers to _call via list_scan_results
+    # To do this, update list_scan_results to accept headers
+    # For now, call _call directly for demonstration:
+    results = tsc._call("/rest/scanResult", "GET", query={"fields": "id,name,status,repository,createdTime"}, headers=headers)
     print(json.dumps(results, indent=2))
