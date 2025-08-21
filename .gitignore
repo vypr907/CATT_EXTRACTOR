@@ -8,3 +8,4 @@
 .vscode/
 FINDINGS/
 SCANS/
+__pycache__/

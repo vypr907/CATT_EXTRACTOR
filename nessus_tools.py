@@ -2,12 +2,12 @@ import os
 import glob
 import pandas as pd
 import xml.etree.ElementTree as ET
-import argparse
-import tkinter as tk
-from tkinter import filedialog
+import zipfile
+from pathlib import Path
+from typing import List
 
 
-class NessusXMLParser:
+class NessusParser:
     '''
     Parses a Nessus XML file and extracts relevant information.
     This class is designed to handle Nessus XML files, extracting findings
@@ -63,9 +63,10 @@ class NessusXMLParser:
     
 class NessusToExcelExporter:
     '''Exports findings to an Excel file.'''
-    def __init__(self, input_folder, output_file):
+    def __init__(self, input_folder, output_file, cat_lvl=("II",)):
         self.input_folder = input_folder
         self.output_file = output_file
+        self.cat_lvl = cat_lvl
         self.files = glob.glob(os.path.join(input_folder, '*.nessus'))
 
     def run(self):
@@ -77,8 +78,8 @@ class NessusToExcelExporter:
         with pd.ExcelWriter(self.output_file, engine='openpyxl') as writer:
             for filepath in self.files:
                 try:
-                    parser = NessusXMLParser(filepath)
-                    df = parser.get_cat2_findings()
+                    parser = NessusParser(filepath)
+                    df = parser.get_cat_findings()
                     
                     if not df.empty:
                         # Use filename as sheet name, limited to 31 characters
@@ -93,53 +94,33 @@ class NessusToExcelExporter:
 
         print(f"\n🎉 Finished! Findings (CAT {','.join(self.cat_lvl)}) saved in {self.output_file}")
 
-    def pick_folders_gui():
-        '''Fallback to GUI dialogs if no CLI args are provided'''
-        root = tk.Tk()
-        root.withdraw()
+class NessusExtractor:
+    '''
+    Extracts .nessus files from Tenable Security Center ZIP scan downloads
+    into a single folder.
+    '''
 
-        input_folder = filedialog.askdirectory(
-            title="Select Folder Containing .nessus Files"
-        )
-        if not input_folder:
-            print("❌ No folder selected, exiting.")
-            exit(1)
+    def __init__(self, source_folder: str, destination_folder: str):
+        self.source_folder = Path(source_folder)
+        self.destination_folder = Path(destination_folder)
+        self.destination_folder.mkdir(parents=True, exist_ok=True)
 
-        output_file = filedialog.asksaveasfilename(
-            title="Save CAT: II findings to Excel",
-            defaultextension=".xlsx",
-            filetypes=[("Excel Files", "*.xlsx")],
-        )
-        if not output_file:
-            print("❌ No output file selected, exiting.")
-            exit(1)
+    def extract_all(self) -> List[Path]:
+        '''
+        Extract all .nessus files from ZIPs in the source folder.
+        Returns a list of extracted file paths.
+        '''
+        extracted_files = []
 
-        return input_folder, output_file
-    
-
-    if __name__ == "__main__":
-        parser = argparse.ArgumentParser(
-            description="Extract CAT findings from .nessus scan files into Excel."
-        )
-        parser.add_argument(
-            "--input", "-i", help="Input folder containing .nessus files"
-        )
-        parser.add_argument(
-            "--output", "-o", help="Output Excel file path"
-        )
-        parser.add_argument(
-            "--cat", "-c", nargs="+", default=["II"],
-            help="CAT levels to extract (e.g., --cat II or --cat I II III)"
-        )
-
-        args = parser.parse_args()
-
-        if args.input and args.output:
-            input_folder = args.input
-            output_file = args.output
-        else:
-            input_folder, output_file = pick_folders_gui()
-
-        exporter = NessusToExcelExporter(input_folder, output_file, args.cat)
-        exporter.run()
-        print("✅ Done!")
+        for zip_path in self.source_folder.glob("*.zip"):
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                for file in zip_ref.namelist():
+                    if file.endswith('.nessus'):
+                        extracted_path = self.destination_folder / Path(file).name
+                        with zip_ref.open(file) as src, open(extracted_path, 'wb') as dst:
+                            dst.write(src.read())
+                        extracted_files.append(extracted_path)
+                        print(f"[+] Extracted {file} from {zip_path.name}to {extracted_path}")
+                    else:
+                        print(f"Skipping {file} (not a .nessus file)")
+        return extracted_files
