@@ -199,7 +199,7 @@ class NessusToExcelExporter:
 class NessusExtractor:
     '''
     Extracts .nessus files from Tenable Security Center ZIP scan downloads
-    into a single folder.
+    into a single folder, renaming them based on the ZIP filename.
     '''
 
     def __init__(self, source_folder: str, destination_folder: str):
@@ -210,6 +210,7 @@ class NessusExtractor:
     def extract_all(self) -> List[Path]:
         '''
         Extract all .nessus files from ZIPs in the source folder.
+        Rename them based on the ZIP filename.
         Returns a list of extracted file paths.
         '''
         print(f"⚙️  NessusExtractor initialized...")
@@ -217,10 +218,22 @@ class NessusExtractor:
         extracted_files = []
 
         for zip_path in self.source_folder.glob("*.zip"):
+            # Derive friendly name from ZIP filename
+            zip_stem = zip_path.stem # e.g., "PAAN_OP_WIN10_DISA"
+            friendly_name = zip_stem
+            # Remove "PAAN_" prefix and "_DISA" suffix if present
+            if friendly_name.startswith("PAAN_"):
+                friendly_name = friendly_name[len("PAAN_"):]
+            if friendly_name.endswith("_DISA"):
+                friendly_name = friendly_name[:-len("_DISA")]
+            friendly_name += ".nessus" # final filename
+
+            # Rename the extracted file to the friendly name
+            extracted_path = self.destination_folder / friendly_name
+            
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 for file in zip_ref.namelist():
                     if file.endswith('.nessus'):
-                        extracted_path = self.destination_folder / Path(file).name
                         with zip_ref.open(file) as src, open(extracted_path, 'wb') as dst:
                             dst.write(src.read())
                         extracted_files.append(extracted_path)
