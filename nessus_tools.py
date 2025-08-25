@@ -33,7 +33,8 @@ class NessusParser:
 
     def get_cat_findings(self, cat_lvls=("II",)):
         '''
-        Extract findings that match any of the requested CAT levels.
+        Extract findings that match any of the requested CAT levels,
+        and include the host associated with the finding.
         Args:
             cat_lvls (tuple|list): e.g., ("II",) or ("I", "II", "III")   
         '''
@@ -44,38 +45,43 @@ class NessusParser:
         cat_lvls = [f"CAT|{lvl.upper()}" for lvl in cat_lvls]
 
         for report in self.root.findall(".//Report"):
-            for item in report.findall(".//ReportItem"):
-                plugin_id = item.get("pluginID")
-                severity = item.get("severity")
-                plugin_name = item.get("pluginName")
-                description = item.findtext("description", default="").strip()
+            for host in report.findall(".//ReportHost"):
+                hostname = host.get("name", "UNKNOWN")
 
-                # ----- Compliance findings ---
-                compliance_ref = (item.findtext("{*}compliance-reference") or "").strip()
-                compliance_result = (item.findtext("{*}compliance-result") or "").strip()
+                for item in host.findall(".//ReportItem"):
+                    plugin_id = item.get("pluginID")
+                    severity = item.get("severity")
+                    plugin_name = item.get("pluginName")
+                    description = item.findtext("description", default="").strip()
 
-                # Only process FAILED compliance results
-                if compliance_result != "FAILED":
-                    continue
+                    # ----- Compliance findings ---
+                    compliance_ref = (item.findtext("{*}compliance-reference") or "").strip()
+                    compliance_result = (item.findtext("{*}compliance-result") or "").strip()
 
-                # Check if any requested CAT level is presnt in the compliance result
-                for cat_lvl in cat_lvls:
-                    if cat_lvl in compliance_ref.upper():
-                        findings.append({
-                            "Plugin ID": plugin_id,
-                            "Severity": severity,
-                            "Result": compliance_result,
-                            "Plugin Name": plugin_name,
-                            "Description": description.strip(),
-                            "CAT": cat_lvl.split("|")[1],
-                            "Compliance Reference": compliance_ref.strip(),
-                        })
+                    # Only process FAILED compliance results
+                    if compliance_result != "FAILED":
+                        continue
+
+                    # Check if any requested CAT level is presnt in the compliance result
+                    for cat_lvl in cat_lvls:
+                        if cat_lvl in compliance_ref.upper():
+                            findings.append({
+                                "Hostname": hostname,
+                                "Plugin ID": plugin_id,
+                                "Severity": severity,
+                                "Result": compliance_result,
+                                "Plugin Name": plugin_name,
+                                "Description": description.strip(),
+                                "CAT": cat_lvl.split("|")[1],
+                                "Compliance Reference": compliance_ref.strip(),
+                            })
 
 
         if findings:
             return pd.DataFrame(findings)
         else:
             return pd.DataFrame(columns=[
+                "Hostname",
                 "Plugin ID",
                 "Severity",
                 "Result",
