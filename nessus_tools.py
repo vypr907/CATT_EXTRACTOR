@@ -5,6 +5,8 @@ import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 from typing import List
+import tkinter as tk
+from tkinter import filedialog
 
 
 class NessusParser:
@@ -35,6 +37,9 @@ class NessusParser:
         Args:
             cat_lvl (tuple|list): e.g., ("II",) or ("I", "II", "III")   
         '''
+        print(f"⚙️ Parsing Nessus files...")
+        print(f"⚙️ Extracting findings for CAT levels: {cat_lvl}")
+
         findings = []
         cat_lvl = [f"CAT:{lvl.upper()}" for lvl in cat_lvl]
 
@@ -110,6 +115,8 @@ class NessusExtractor:
         Extract all .nessus files from ZIPs in the source folder.
         Returns a list of extracted file paths.
         '''
+        print(f"⚙️ NessusExtractor initialized...")
+
         extracted_files = []
 
         for zip_path in self.source_folder.glob("*.zip"):
@@ -124,3 +131,60 @@ class NessusExtractor:
                     else:
                         print(f"Skipping {file} (not a .nessus file)")
         return extracted_files
+    
+
+class NessusWorkflow:
+    '''
+    Orchestrates the Nessus workflow. Extraction, Parsing, and Exporting.
+    '''
+
+    def __init__(self, input_folder, output_file, cat_lvls=("II",)):
+        self.input_folder = Path(input_folder).resolve()
+        self.output_file = Path(output_file).resolve()
+        self.cat_lvls = cat_lvls
+
+    def run(self):
+        print(f"📂 Starting Nessus workflow...")
+        # Step 1: Extract .nessus files from ZIP files if required
+        zip_files = list(self.input_folder.glob("*.zip"))
+        if zip_files: #only extract if zips are present
+            print(f"📦 Found {len(zip_files)} ZIP files to extract. Extracting from {self.input_folder}...")
+            extracted_folder = self.input_folder / "extracted_nessus"
+            extracted_folder.mkdir(exist_ok=True)
+            extractor = NessusExtractor(self.input_folder)
+            extractor.extract_all(extracted_folder)
+            self.input_folder = extracted_folder
+        else:
+            print(f"ℹ️ No ZIP files found in {self.input_folder}, skipping extraction.")
+
+        # Step 2: Export CAT findings to Excel
+        print(f"📑 Processing Nessus files in {self.input_folder}...")
+        exporter = NessusToExcelExporter(self.input_folder, self.output_file, self.cat_lvls)
+        exporter.run()
+
+        print(f"✅ Finished processing Nessus files in {self.input_folder}")
+        print(f"✅ Exported CAT findings to {self.output_file}")
+        print(f"✅ All done!")
+
+def pick_folders_gui():
+    root = tk.Tk()
+    root.withdraw()
+
+    input_folder = filedialog.askdirectory(
+        title="Select the folder containing the Nessus XML files"
+    )
+    if not input_folder:
+        print("❌ No folder selected. Exiting.")
+        exit(1)
+
+    output_file = filedialog.asksaveasfilename(
+        title="Save Excel File As",
+        defaultextension=".xlsx",
+        filetypes=[("Excel Files", "*.xlsx")],
+        initialfile="CATT_Extracted_Data.xlsx",
+    )
+    if not output_file:
+        print("❌ No file selected. Exiting.")
+        exit(1)
+    
+    return input_folder, output_file
