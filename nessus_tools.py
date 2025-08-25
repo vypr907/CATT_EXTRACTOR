@@ -31,17 +31,17 @@ class NessusParser:
         except Exception as e:
             raise RuntimeError(f"Failed to load XML file {self.filepath}: {e}")
 
-    def get_cat_findings(self, cat_lvl=("II",)):
+    def get_cat_findings(self, cat_lvls=("II",)):
         '''
         Extract findings that match any of the requested CAT levels.
         Args:
-            cat_lvl (tuple|list): e.g., ("II",) or ("I", "II", "III")   
+            cat_lvls (tuple|list): e.g., ("II",) or ("I", "II", "III")   
         '''
         print(f"⚙️  Parsing Nessus files...")
-        print(f"⚙️  Extracting findings for CAT levels: {cat_lvl}")
+        print(f"⚙️  Extracting findings for CAT levels: {cat_lvls}")
 
         findings = []
-        cat_lvl = [f"CAT:{lvl.upper()}" for lvl in cat_lvl]
+        cat_lvls = [f"CAT|{lvl.upper()}" for lvl in cat_lvls]
 
         for report in self.root.findall(".//Report"):
             for item in report.findall(".//ReportItem"):
@@ -49,6 +49,9 @@ class NessusParser:
                 severity = item.get("severity")
                 plugin_name = item.get("pluginName")
                 
+                '''-------------------------OLD SEARCH-----------------------------------------------------------
+                Commenting out this as the .nessus file is not structured as such that this will find what I need
+                -------------------------------------------------------------------------------------------------
                 # Collect cross-references
                 refs = []
                 for child in item:
@@ -63,15 +66,96 @@ class NessusParser:
                         "Plugin Name": plugin_name,
                         "Cross References": "; ".join(refs)
                     })
+                -----------------------------------------------------------------------------------------------
+                '''
 
-        return pd.DataFrame(findings)
+                # ----- Classic vuln findings ---
+                risk_factor = item.findtext("risk_factor", default="").strip().upper()
+                description = item.findtext("description", default="").strip()
+
+                # ----- Compliance findings ---
+                #compliance_ref = item.findtext(".//cm:compliance-reference", default="", namespaces={'cm':'http://www.nessus.org/cm'}) or \
+                #    item.findtext(".//compliance-reference", default="")
+                #compliance_result = item.findtext(".//cm:compliance-result", default="", namespaces={'cm':'http://www.nessus.org/cm'}) or \
+                #    item.findtext(".//compliance-result", default="")
+                #compliance_result = compliance_result.strip().upper()
+                compliance_ref = (item.findtext("{*}compliance-reference") or "").strip()
+                compliance_result = (item.findtext("{*}compliance-result") or "").strip()
+
+                # Only process FAILED compliance results
+                if compliance_result != "FAILED":
+                    continue
+
+                # Check if any requested CAT level is presnt in the compliance result
+                for cat_lvl in cat_lvls:
+                    if cat_lvl in compliance_ref.upper():
+                        findings.append({
+                            "Plugin ID": plugin_id,
+                            "Severity": severity,
+                            "Result": compliance_result,
+                            "Plugin Name": plugin_name,
+                            "Description": description.strip(),
+                            "CAT": cat_lvl.split("|")[1],
+                            "Compliance Reference": compliance_ref.strip(),
+                        })
+
+                ''' --------------------- ALSO OLD SEARCH -----------------------------------------
+                # Normalize everything
+                text_blob = " ".join([description, compliance_ref]).upper()
+                #compliance_result = compliance_result.strip().upper()
+                #risk_factor = risk_factor.strip().upper()
+
+                for cat in cat_lvls: # e.g. ["I", "II", "III"]
+                    target = f"CAT|{cat.upper()}"
+
+                    # Case A: Classic vuln finding (uses risk_factor and description text)
+                    if target in text_blob and risk_factor in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
+                        findings.append({
+                            "Plugin ID": plugin_id,
+                            "Severity": severity,
+                            "Result": risk_factor,
+                            "Plugin Name": plugin_name,
+                            "Description": description.strip(),
+                            "CAT": cat,
+                            "Compliance Reference": compliance_ref.strip(),
+                            "Compliance Result": compliance_result
+                        })
+
+                    # Case B: Compliance finding (uses compliance-reference and compliance-result text)
+                    elif target in text_blob and compliance_result == "FAILED":
+                        findings.append({
+                            "Plugin ID": plugin_id,
+                            "Plugin Name": plugin_name,
+                            "Severity": severity,
+                            "CAT": cat,
+                            "Description": description.strip(),
+                            "Result": compliance_result,
+                            "Reference": compliance_ref.strip()
+                        })
+                ---------------------------------------------------------------------------------'''
+
+        if findings:
+            return pd.DataFrame(findings)
+        else:
+            return pd.DataFrame(columns=[
+                "Plugin ID",
+                "Severity",
+                "Result",
+                "Plugin Name",
+                "Description",
+                "CAT",
+                "Cross References",
+                "Compliance Reference",
+                "Compliance Result"
+            ])
+        #return pd.DataFrame(findings)
     
 class NessusToExcelExporter:
     '''Exports findings to an Excel file.'''
-    def __init__(self, input_folder, output_file, cat_lvl=("II",)):
+    def __init__(self, input_folder, output_file, cat_lvls=("II",)):
         self.input_folder = input_folder
         self.output_file = output_file
-        self.cat_lvl = cat_lvl
+        self.cat_lvls = cat_lvls
         self.files = glob.glob(os.path.join(input_folder, '*.nessus'))
 
     def run(self):
@@ -87,15 +171,15 @@ class NessusToExcelExporter:
             for filepath in self.files:
                 try:
                     parser = NessusParser(filepath)
-                    df = parser.get_cat_findings()
+                    df = parser.get_cat_findings(cat_lvls=self.cat_lvls)
                     
                     if not df.empty:
                         # Use filename as sheet name, limited to 31 characters
                         sheet_name = os.path.splitext(os.path.basename(filepath))[0][:31]
                         df.to_excel(writer, sheet_name=sheet_name, index=False)
-                        print(f"✅  Processed {filepath}, found {len(df)} findings (CAT {','.join(self.cat_lvl)}")
+                        print(f"✅  Processed {filepath}, found {len(df)} findings (CAT {','.join(self.cat_lvls)}")
                     else:
-                        print(f"ℹ️  No CAT {','.join(self.cat_lvl)} findings in {filepath}")
+                        print(f"ℹ️  No CAT {','.join(self.cat_lvls)} findings in {filepath}")
                 except Exception as e:
                     print(f"❌ Error processing {filepath}: {e}")
                     continue
@@ -103,14 +187,14 @@ class NessusToExcelExporter:
                 placeholder_df = pd.DataFrame(
                     {
                         "Message": [
-                            f"No CAT {','.join(self.cat_lvl)} findings found in any file."
+                            f"No CAT {','.join(self.cat_lvls)} findings found in any file."
                         ]
                     }
                 )
                 placeholder_df.to_excel(writer, sheet_name="No_Findings", index=False)
                 print("⚠️  No findings found in any file. Wrote placeholder sheet")
 
-        print(f"\n🎉 Finished! Findings (CAT {','.join(self.cat_lvl)}) saved in {self.output_file}")
+        print(f"\n🎉 Finished! Findings (CAT {','.join(self.cat_lvls)}) saved in {self.output_file}")
 
 class NessusExtractor:
     '''
