@@ -48,37 +48,9 @@ class NessusParser:
                 plugin_id = item.get("pluginID")
                 severity = item.get("severity")
                 plugin_name = item.get("pluginName")
-                
-                '''-------------------------OLD SEARCH-----------------------------------------------------------
-                Commenting out this as the .nessus file is not structured as such that this will find what I need
-                -------------------------------------------------------------------------------------------------
-                # Collect cross-references
-                refs = []
-                for child in item:
-                    if child.tag.lower() in ['xref', 'cross-reference']:
-                        refs.append(child.text)
-
-                # Look for CAT in cross-references
-                if any(ref and any(cl in ref for cl in cat_lvl) for ref in refs):
-                    findings.append({
-                        "Plugin ID": plugin_id,
-                        "Severity": severity,
-                        "Plugin Name": plugin_name,
-                        "Cross References": "; ".join(refs)
-                    })
-                -----------------------------------------------------------------------------------------------
-                '''
-
-                # ----- Classic vuln findings ---
-                risk_factor = item.findtext("risk_factor", default="").strip().upper()
                 description = item.findtext("description", default="").strip()
 
                 # ----- Compliance findings ---
-                #compliance_ref = item.findtext(".//cm:compliance-reference", default="", namespaces={'cm':'http://www.nessus.org/cm'}) or \
-                #    item.findtext(".//compliance-reference", default="")
-                #compliance_result = item.findtext(".//cm:compliance-result", default="", namespaces={'cm':'http://www.nessus.org/cm'}) or \
-                #    item.findtext(".//compliance-result", default="")
-                #compliance_result = compliance_result.strip().upper()
                 compliance_ref = (item.findtext("{*}compliance-reference") or "").strip()
                 compliance_result = (item.findtext("{*}compliance-result") or "").strip()
 
@@ -99,40 +71,6 @@ class NessusParser:
                             "Compliance Reference": compliance_ref.strip(),
                         })
 
-                ''' --------------------- ALSO OLD SEARCH -----------------------------------------
-                # Normalize everything
-                text_blob = " ".join([description, compliance_ref]).upper()
-                #compliance_result = compliance_result.strip().upper()
-                #risk_factor = risk_factor.strip().upper()
-
-                for cat in cat_lvls: # e.g. ["I", "II", "III"]
-                    target = f"CAT|{cat.upper()}"
-
-                    # Case A: Classic vuln finding (uses risk_factor and description text)
-                    if target in text_blob and risk_factor in ["CRITICAL", "HIGH", "MEDIUM", "LOW"]:
-                        findings.append({
-                            "Plugin ID": plugin_id,
-                            "Severity": severity,
-                            "Result": risk_factor,
-                            "Plugin Name": plugin_name,
-                            "Description": description.strip(),
-                            "CAT": cat,
-                            "Compliance Reference": compliance_ref.strip(),
-                            "Compliance Result": compliance_result
-                        })
-
-                    # Case B: Compliance finding (uses compliance-reference and compliance-result text)
-                    elif target in text_blob and compliance_result == "FAILED":
-                        findings.append({
-                            "Plugin ID": plugin_id,
-                            "Plugin Name": plugin_name,
-                            "Severity": severity,
-                            "CAT": cat,
-                            "Description": description.strip(),
-                            "Result": compliance_result,
-                            "Reference": compliance_ref.strip()
-                        })
-                ---------------------------------------------------------------------------------'''
 
         if findings:
             return pd.DataFrame(findings)
@@ -148,7 +86,7 @@ class NessusParser:
                 "Compliance Reference",
                 "Compliance Result"
             ])
-        #return pd.DataFrame(findings)
+
     
 class NessusToExcelExporter:
     '''Exports findings to an Excel file.'''
