@@ -151,8 +151,8 @@ class NessusWorkflow:
             print(f"📦 Found {len(zip_files)} ZIP files to extract. Extracting from {self.input_folder}...")
             extracted_folder = self.input_folder / "extracted_nessus"
             extracted_folder.mkdir(exist_ok=True)
-            extractor = NessusExtractor(self.input_folder)
-            extractor.extract_all(extracted_folder)
+            extractor = NessusExtractor(self.input_folder, extracted_folder)
+            extractor.extract_all()
             self.input_folder = extracted_folder
         else:
             print(f"ℹ️ No ZIP files found in {self.input_folder}, skipping extraction.")
