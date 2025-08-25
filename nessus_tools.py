@@ -37,8 +37,8 @@ class NessusParser:
         Args:
             cat_lvl (tuple|list): e.g., ("II",) or ("I", "II", "III")   
         '''
-        print(f"⚙️ Parsing Nessus files...")
-        print(f"⚙️ Extracting findings for CAT levels: {cat_lvl}")
+        print(f"⚙️  Parsing Nessus files...")
+        print(f"⚙️  Extracting findings for CAT levels: {cat_lvl}")
 
         findings = []
         cat_lvl = [f"CAT:{lvl.upper()}" for lvl in cat_lvl]
@@ -81,6 +81,9 @@ class NessusToExcelExporter:
             return
         
         with pd.ExcelWriter(self.output_file, engine='openpyxl') as writer:
+            any_written = False
+            print(f"⚙️  Processing Nessus files in {self.input_folder}...")
+
             for filepath in self.files:
                 try:
                     parser = NessusParser(filepath)
@@ -90,12 +93,22 @@ class NessusToExcelExporter:
                         # Use filename as sheet name, limited to 31 characters
                         sheet_name = os.path.splitext(os.path.basename(filepath))[0][:31]
                         df.to_excel(writer, sheet_name=sheet_name, index=False)
-                        print(f"✅ Processed {filepath}, found {len(df)} findings (CAT {','.join(self.cat_lvl)}")
+                        print(f"✅  Processed {filepath}, found {len(df)} findings (CAT {','.join(self.cat_lvl)}")
                     else:
-                        print(f"ℹ️ No CAT {','.join(self.cat_lvl)} findings in {filepath}")
+                        print(f"ℹ️  No CAT {','.join(self.cat_lvl)} findings in {filepath}")
                 except Exception as e:
                     print(f"❌ Error processing {filepath}: {e}")
                     continue
+            if not any_written:
+                placeholder_df = pd.DataFrame(
+                    {
+                        "Message": [
+                            f"No CAT {','.join(self.cat_lvl)} findings found in any file."
+                        ]
+                    }
+                )
+                placeholder_df.to_excel(writer, sheet_name="No_Findings", index=False)
+                print("⚠️  No findings found in any file. Wrote placeholder sheet")
 
         print(f"\n🎉 Finished! Findings (CAT {','.join(self.cat_lvl)}) saved in {self.output_file}")
 
@@ -115,7 +128,7 @@ class NessusExtractor:
         Extract all .nessus files from ZIPs in the source folder.
         Returns a list of extracted file paths.
         '''
-        print(f"⚙️ NessusExtractor initialized...")
+        print(f"⚙️  NessusExtractor initialized...")
 
         extracted_files = []
 
