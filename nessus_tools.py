@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import List
 import tkinter as tk
 from tkinter import filedialog
+import re
 
 
 class NessusParser:
@@ -31,6 +32,50 @@ class NessusParser:
         except Exception as e:
             raise RuntimeError(f"Failed to load XML file {self.filepath}: {e}")
 
+    @staticmethod
+    def parse_descript_block(text: str) -> dict:
+        '''
+        Parse a Nessus description block into STIG, FINDING, Actual Value, Pasteable, and Short Desc columns.
+        '''
+        result = {
+            "STIG": "",
+            "FINDING": "",
+            "Actual Value": "",
+            "Pasteable": "",
+            "Short Desc": ""
+        }
+
+        if not text:
+            return result
+        
+        # Normalize line breaks
+        lines = text.splitlines()
+        clean_text = "\n".join([l.strip() for l in lines if l.strip()])
+
+        # --- Extract STUG UD + Finding ---
+        # Example: "CASA-FW-000200 - The Cisco ASA must be configured ... : [FAILED]"
+        match = re.match(r"^([A-Z0-9\-]+)\s*-\s*(.+?)\s*: \[FAILED\]", clean_text, re.DOTALL)
+        if match:
+            stig, finding       = match.groups()
+            result["STIG"]      = stig.strip()
+            result["FINDING"]   = finding.strip()
+            result["Pasteable"] = f"{stig} - {finding}"
+
+        # --- Extract Actual Value ---
+        m_actual = re.search(r"Actual Value:\s*(.+)", clean_text, re.IGNORECASE | re.DOTALL)
+        if m_actual:
+            # Grab until next section or end
+            actual_value = m_actual.group(1).strip()
+            result["Actual Value"] = actual_value
+
+        # --- Extract Short Desc ---
+        # Everything between the finding line and "Solution:" is the short description
+        short_match = re.search(r"\[FAILED\](.*)Solution:", clean_text, re.DOTALL | re.IGNORECASE)
+        if short_match:
+            result["Short Desc"] = short_match.group(1).strip()
+
+        return result
+
     def get_cat_findings(self, cat_lvls=("II",)):
         '''
         Extract findings that match any of the requested CAT levels,
@@ -53,6 +98,7 @@ class NessusParser:
                     severity = item.get("severity")
                     plugin_name = item.get("pluginName")
                     description = item.findtext("description", default="").strip()
+                    parsed = NessusParser.parse_descript_block(description)
 
                     # ----- Compliance findings ---
                     compliance_ref = (item.findtext("{*}compliance-reference") or "").strip()
@@ -68,11 +114,16 @@ class NessusParser:
                             findings.append({
                                 "Hostname": hostname,
                                 "Plugin ID": plugin_id,
+                                "CAT": cat_lvl.split("|")[1],
                                 "Severity": severity,
                                 "Result": compliance_result,
+                                "STIG": parsed["STIG"],
+                                "FINDING": parsed["FINDING"],
+                                "Actual Value": parsed["Actual Value"],
+                                "Short Desc": parsed["Short Desc"],
                                 "Plugin Name": plugin_name,
                                 "Description": description.strip(),
-                                "CAT": cat_lvl.split("|")[1],
+                                "Pasteable": parsed["Pasteable"],
                                 "Compliance Reference": compliance_ref.strip(),
                             })
 
@@ -83,11 +134,16 @@ class NessusParser:
             return pd.DataFrame(columns=[
                 "Hostname",
                 "Plugin ID",
+                "CAT",
                 "Severity",
                 "Result",
+                "STIG",
+                "FINDING",
+                "Actual Value",
+                "Short Desc",
                 "Plugin Name",
                 "Description",
-                "CAT",
+                "Pasteable",
                 "Cross References",
                 "Compliance Reference",
                 "Compliance Result"
