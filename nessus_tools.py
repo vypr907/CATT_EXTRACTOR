@@ -8,6 +8,7 @@ from typing import List
 import tkinter as tk
 from tkinter import filedialog
 import re
+import shutil
 
 
 class NessusParser:
@@ -198,14 +199,76 @@ class NessusToExcelExporter:
 
 class NessusExtractor:
     '''
-    Extracts .nessus files from Tenable Security Center ZIP scan downloads
-    into a single folder, renaming them based on the ZIP filename.
+    - Extracts .nessus files from Tenable Security Center ZIP scan downloads
+    into a single folder.
+    - Renames them based on the ZIP filename (removing 'PAAN_' prefix and '_DISA' suffix).
+    - Moves processed ZIP files into a 'processed' subfolder for cleanliness.
     '''
 
     def __init__(self, source_folder: str, destination_folder: str):
+        '''
+        Initialize the NessusExtractor with source and destination folders.
+
+        Args:
+            source_folder (str): Path to the folder containing ZIP files.
+            destination_folder (str): Path to the folder where extracted .nessus files will be saved.
+        '''
         self.source_folder = Path(source_folder)
         self.destination_folder = Path(destination_folder)
+        self.processed_folder = self.source_folder / "processed"
+
+        # Ensure destination and processed folders exist
         self.destination_folder.mkdir(parents=True, exist_ok=True)
+        self.processed_folder.mkdir(parents=True, exist_ok=True)
+        print(f"⚙️  NessusExtractor initialized...")
+
+    def _friendly_name(self, zip_path: Path) -> str:
+        '''
+        Generate a clean, human-friendly filename from a ZIP archive.
+        
+        Args:
+            zip_path (Path): Path to the ZIP file.
+        
+        Returns:
+            str: The friendly name derived from the ZIP filename.
+        '''
+        friendly_name = zip_path.stem
+        # Remove "PAAN_" prefix and "_DISA" suffix if present
+        if friendly_name.startswith("PAAN_"):
+            friendly_name = friendly_name[len("PAAN_"):]
+        if friendly_name.endswith("_DISA"):
+            friendly_name = friendly_name[:-len("_DISA")]
+        return friendly_name + ".nessus"
+    
+    def _process_zip(self, zip_path: Path) -> List[Path]:
+        '''
+        Extract .nessus files from a ZIP archive.
+        
+        Args:
+            zip_path (Path): Path to the ZIP file.
+        
+        Returns:
+            List[Path]: List of paths to the extracted .nessus files.
+        '''
+        extracted_files = []
+        friendly_name = self._friendly_name(zip_path)
+        extracted_path = self.destination_folder / friendly_name
+        
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            for file in zip_ref.namelist():
+                if file.endswith(".nessus"):
+                    with zip_ref.open(file) as src, open(extracted_path, "wb") as dst:
+                        dst.write(src.read())
+                    extracted_files.append(extracted_path)
+                    print(f"[+] Extracted {file} from {zip_path.name}→ {extracted_path}")
+                else:
+                    print(f"[-] Skipping {file} (not a .nessus file)")
+        
+        # Move processed ZIP to "processed" folder
+        shutil.move(str(zip_path), self.processed_folder / zip_path.name)
+        print(f"[✓] Moved {zip_path.name} → {self.processed_folder.name}")
+        
+        return extracted_files
 
     def extract_all(self) -> List[Path]:
         '''
@@ -213,34 +276,15 @@ class NessusExtractor:
         Rename them based on the ZIP filename.
         Returns a list of extracted file paths.
         '''
-        print(f"⚙️  NessusExtractor initialized...")
+        print(f"⚙️  Starting Nessus Extraction...")
 
-        extracted_files = []
+        all_extracted_files = []
 
         for zip_path in self.source_folder.glob("*.zip"):
-            # Derive friendly name from ZIP filename
-            zip_stem = zip_path.stem # e.g., "PAAN_OP_WIN10_DISA"
-            friendly_name = zip_stem
-            # Remove "PAAN_" prefix and "_DISA" suffix if present
-            if friendly_name.startswith("PAAN_"):
-                friendly_name = friendly_name[len("PAAN_"):]
-            if friendly_name.endswith("_DISA"):
-                friendly_name = friendly_name[:-len("_DISA")]
-            friendly_name += ".nessus" # final filename
+            all_extracted_files.extend(self._process_zip(zip_path))
 
-            # Rename the extracted file to the friendly name
-            extracted_path = self.destination_folder / friendly_name
-            
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                for file in zip_ref.namelist():
-                    if file.endswith('.nessus'):
-                        with zip_ref.open(file) as src, open(extracted_path, 'wb') as dst:
-                            dst.write(src.read())
-                        extracted_files.append(extracted_path)
-                        print(f"[+] Extracted {file} from {zip_path.name}to {extracted_path}")
-                    else:
-                        print(f"Skipping {file} (not a .nessus file)")
-        return extracted_files
+        print("✅ Nessus extraction complete.")    
+        return all_extracted_files
     
 
 class NessusWorkflow:
