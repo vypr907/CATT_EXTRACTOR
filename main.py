@@ -53,7 +53,7 @@ def main():
     elapsed = end_time - start_time
     minutes, seconds = divmod(int(elapsed), 60)
 
-    Logger.log("⏱ Ran in {minutes}:{seconds}.")
+    Logger.log(f"⏱ Ran in {minutes}:{seconds}.")
     print(f"⏱ Execution time: {minutes}:{seconds}")
 
 

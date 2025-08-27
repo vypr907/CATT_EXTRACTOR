@@ -10,6 +10,7 @@ from tkinter import filedialog
 import re
 import shutil
 import datetime
+import time
 
 
 class NessusParser:
@@ -105,9 +106,11 @@ class NessusParser:
         Args:
             cat_lvls (tuple|list): e.g., ("II",) or ("I", "II", "III")   
         '''
-        print(f"⚙️  Parsing Nessus files...")
+        file_start_time = time.time() # ⏱ start timer for per-file processing time
+
+        print(f"📂 Parsing Nessus file: {os.path.splitext(os.path.basename(self.filepath))[0]}")
         print(f"⚙️  Extracting findings for CAT levels: {cat_lvls}")
-        Logger.log(f"⚙️ Extracting CAT findings for levels: {cat_lvls}")
+        Logger.log(f"⚙️ Extracting CAT findings for levels: {cat_lvls} from 📂 {os.path.splitext(os.path.basename(self.filepath))[0]}")
 
         findings = []
         cat_lvls = [f"CAT|{lvl.upper()}" for lvl in cat_lvls]
@@ -118,6 +121,7 @@ class NessusParser:
                 Logger.log(f"📡 Processing host: {hostname}")
 
                 for item in host.findall(".//ReportItem"):
+                    Logger.log(f"📑 Processing ReportItem...")
                     plugin_id = item.get("pluginID")
                     severity = item.get("severity")
                     plugin_name = item.get("pluginName")
@@ -129,7 +133,9 @@ class NessusParser:
 
                     # Only process FAILED compliance results
                     if compliance_result != "FAILED":
-                        continue
+                        #Logger.log(f"Compliance check {compliance_result} - going to next item.") #NOT NEEDED
+                        continue #skips to next item
+
 
                     # Check if any requested CAT level is present in the compliance result
                     matched = False
@@ -161,13 +167,15 @@ class NessusParser:
                             Logger.log(f"ℹ️ Skipped finding (no CAT match) Host={hostname}, Plugin={plugin_id}")
 
       
-
+        file_end_time = time.time() # ⏱ end timer
+        elapsed = file_end_time - file_start_time
+        minutes, seconds = divmod(int(elapsed), 60)
 
         if findings:
-            Logger.log(f"📊 Total findings extracted: {len(findings)}")
-            return pd.DataFrame(findings)
+            Logger.log(f"📊 Total findings extracted: {len(findings)} in {minutes}:{seconds}")
+            return pd.DataFrame(findings), (minutes, seconds)
         else:
-            return pd.DataFrame(columns=[
+            df_empty = pd.DataFrame(columns=[
                 "Hostname",
                 "Plugin ID",
                 "CAT",
@@ -184,6 +192,7 @@ class NessusParser:
                 "Compliance Reference",
                 "Compliance Result"
             ])
+            return df_empty, (minutes, seconds)
 
     
 class NessusToExcelExporter:
@@ -209,17 +218,18 @@ class NessusToExcelExporter:
             for filepath in self.files:
                 try:
                     parser = NessusParser(filepath)
-                    df = parser.get_cat_findings(cat_lvls=self.cat_lvls)
+                    df, (mins, secs) = parser.get_cat_findings(cat_lvls=self.cat_lvls)
+                    fn = os.path.splitext(os.path.basename(filepath))[0]
                     
                     if not df.empty:
                         # Use filename as sheet name, limited to 31 characters
                         sheet_name = os.path.splitext(os.path.basename(filepath))[0][:31]
                         df.to_excel(writer, sheet_name=sheet_name, index=False)
                         any_written = True
-                        print(f"✅  Processed {filepath}, found {len(df)} findings (CAT {','.join(self.cat_lvls)}")
-                        Logger.log(f"✅  Processed {filepath}, found {len(df)} findings (CAT {','.join(self.cat_lvls)}")
+                        print(f"✅ Processed {sheet_name}, found {len(df)} findings (CAT {','.join(self.cat_lvls)}) in {mins}:{secs}.")
+                        Logger.log(f"✅ Processed {filepath}, found {len(df)} findings (CAT {','.join(self.cat_lvls)}) in {mins}:{secs}.")
                     else:
-                        print(f"ℹ️  No CAT {','.join(self.cat_lvls)} findings in {filepath}")
+                        print(f"ℹ️  No CAT {','.join(self.cat_lvls)} findings in {fn}")
                         Logger.log(f"ℹ️  No CAT {','.join(self.cat_lvls)} findings in {filepath}")
                 except Exception as e:
                     print(f"❌ Error processing {filepath}: {e}")
@@ -309,8 +319,9 @@ class NessusExtractor:
                     print(f"[-] Skipping {file} (not a .nessus file)")
         
         # Move processed ZIP to "processed" folder
-        shutil.move(str(zip_path), self.processed_folder / zip_path.name)
-        print(f"[✓] Moved {zip_path.name} → {self.processed_folder.name}")
+        # TEMPORARILY DISABLING THE MOVE
+        #shutil.move(str(zip_path), self.processed_folder / zip_path.name)
+        #rint(f"[✓] Moved {zip_path.name} → {self.processed_folder.name}")
         
         return extracted_files
 
@@ -328,7 +339,7 @@ class NessusExtractor:
         for zip_path in self.source_folder.glob("*.zip"):
             all_extracted_files.extend(self._process_zip(zip_path))
 
-        print("✅ Nessus extraction complete.")
+        print(f"✅ Nessus extraction complete.")
         Logger.log("✅ Nessus extraction complete.")
         return all_extracted_files
     
@@ -368,8 +379,8 @@ class NessusWorkflow:
         exporter.run()
 
         print(f"✅ Finished processing Nessus files in {self.input_folder}")
-        print(f"✅ Exported CAT findings to {self.output_file}")
-        print(f"✅ All done!")
+        print(f"✅ Exported CAT findings")
+        #print(f"✅ All done!")
         Logger.log(f"✅ All done! Finished processing Nessus files in {self.input_folder}, and exported CAT findings to {self.output_file}.")
 
 
