@@ -122,7 +122,6 @@ class NessusParser:
                     severity = item.get("severity")
                     plugin_name = item.get("pluginName")
                     description = item.findtext("description", default="").strip()
-                    parsed = NessusParser.parse_descript_block(description) # maybe move to after the "only process FAILED" block?
 
                     # ----- Compliance findings ---
                     compliance_ref = (item.findtext("{*}compliance-reference") or "").strip()
@@ -136,6 +135,9 @@ class NessusParser:
                     matched = False
                     for cat_lvl in cat_lvls:
                         if cat_lvl in compliance_ref.upper():
+                            # ✅ Only parse description block when we know it’s relevant
+                            parsed = NessusParser.parse_descript_block(description)
+
                             matched = True
                             findings.append({
                                 "Hostname": hostname,

@@ -1,11 +1,13 @@
 import argparse
-from nessus_tools import NessusToExcelExporter
-from nessus_tools import NessusExtractor
+import time
+from nessus_tools import Logger
 from nessus_tools import NessusWorkflow
 from nessus_tools import pick_folders_gui
 from pathlib import Path
 
 def main():
+    start_time = time.time() # ⏱ start timer
+
     parser = argparse.ArgumentParser(
         description="Extract CAT findings from Nessus scan files and save to an Excel file."
     )
@@ -43,6 +45,16 @@ def main():
     # Print a success message
     # -----------------------------------------------
     print(f"✅ Done! Data saved to {output_file}")
+
+    # -----------------------------------------------
+    # 🕒 End timer and log/print execution time
+    # -----------------------------------------------
+    end_time = time.time() # ⏱ end timer
+    elapsed = end_time - start_time
+    minutes, seconds = divmod(int(elapsed), 60)
+
+    Logger.log("⏱ Ran in {minutes}:{seconds}.")
+    print(f"⏱ Execution time: {minutes}:{seconds}")
 
 
 if __name__ == "__main__":
