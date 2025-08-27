@@ -9,6 +9,7 @@ import tkinter as tk
 from tkinter import filedialog
 import re
 import shutil
+import datetime
 
 
 class NessusParser:
@@ -30,7 +31,9 @@ class NessusParser:
         try:
             self.tree = ET.parse(self.filepath)
             self.root = self.tree.getroot()
+            Logger.log(f"✅  Succesfully loaded XML file: {self.filepath}")
         except Exception as e:
+            Logger.log(f"❌ Failed to load XML file {self.filepath}: {e}")
             raise RuntimeError(f"Failed to load XML file {self.filepath}: {e}")
 
     @staticmethod
@@ -43,24 +46,34 @@ class NessusParser:
             "FINDING": "",
             "Actual Value": "",
             "Pasteable": "",
-            "Short Desc": ""
+            "Short Desc": "",
+            "Solution": ""
         }
 
         if not text:
+            Logger.log("⚠️ Empty description block encountered")
             return result
         
         # Normalize line breaks
         lines = text.splitlines()
         clean_text = "\n".join([l.strip() for l in lines if l.strip()])
+        Logger.log(f"🔍 Parsing description block (first 80 chars): {clean_text[:80]}...")
 
-        # --- Extract STUG UD + Finding ---
+        # --- Extract STIG UD + Finding ---
         # Example: "CASA-FW-000200 - The Cisco ASA must be configured ... : [FAILED]"
-        match = re.match(r"^([A-Z0-9\-]+)\s*-\s*(.+?)\s*: \[FAILED\]", clean_text, re.DOTALL)
+        match = re.match(
+            r'^"([A-Z0-9\-]+)\s*-\s*(.+)"\s*: \[FAILED\]$',
+            clean_text, re.DOTALL
+            )
+        
         if match:
             stig, finding       = match.groups()
             result["STIG"]      = stig.strip()
             result["FINDING"]   = finding.strip()
             result["Pasteable"] = f"{stig} - {finding}"
+            Logger.log(f"✅ Regex matched STIG={stig}, FINDING starts with={finding[:40]}...")
+        else:
+            Logger.log("❌ Regex failed for description block")
 
         # --- Extract Actual Value ---
         m_actual = re.search(r"Actual Value:\s*(.+)", clean_text, re.IGNORECASE | re.DOTALL)
@@ -75,6 +88,12 @@ class NessusParser:
         if short_match:
             result["Short Desc"] = short_match.group(1).strip()
 
+        # --- Extract Solution ---
+        # Everything between "Solution:" and the next section is the solution
+        solution_match = re.search(r"Solution:\s*(.*)\n", clean_text, re.DOTALL | re.IGNORECASE)
+        if solution_match:
+            result["Solution"] = solution_match.group(1).strip()
+
         return result
 
     def get_cat_findings(self, cat_lvls=("II",)):
@@ -86,6 +105,7 @@ class NessusParser:
         '''
         print(f"⚙️  Parsing Nessus files...")
         print(f"⚙️  Extracting findings for CAT levels: {cat_lvls}")
+        Logger.log(f"⚙️ Extracting CAT findings for levels: {cat_lvls}")
 
         findings = []
         cat_lvls = [f"CAT|{lvl.upper()}" for lvl in cat_lvls]
@@ -93,6 +113,7 @@ class NessusParser:
         for report in self.root.findall(".//Report"):
             for host in report.findall(".//ReportHost"):
                 hostname = host.get("name", "UNKNOWN")
+                Logger.log(f"📡 Processing host: {hostname}")
 
                 for item in host.findall(".//ReportItem"):
                     plugin_id = item.get("pluginID")
@@ -109,9 +130,11 @@ class NessusParser:
                     if compliance_result != "FAILED":
                         continue
 
-                    # Check if any requested CAT level is presnt in the compliance result
+                    # Check if any requested CAT level is present in the compliance result
+                    matched = False
                     for cat_lvl in cat_lvls:
                         if cat_lvl in compliance_ref.upper():
+                            matched = True
                             findings.append({
                                 "Hostname": hostname,
                                 "Plugin ID": plugin_id,
@@ -127,9 +150,17 @@ class NessusParser:
                                 "Pasteable": parsed["Pasteable"],
                                 "Compliance Reference": compliance_ref.strip(),
                             })
+                            Logger.log(f"✅ Added finding from {hostname} (Plugin {plugin_id}, {cat_lvl})")
+                            break
+
+                        if not matched:
+                            Logger.log(f"ℹ️ Skipped finding (no CAT match) Host={hostname}, Plugin={plugin_id}")
+
+      
 
 
         if findings:
+            Logger.log(f"📊 Total findings extracted: {len(findings)}")
             return pd.DataFrame(findings)
         else:
             return pd.DataFrame(columns=[
@@ -319,6 +350,17 @@ class NessusWorkflow:
         print(f"✅ Finished processing Nessus files in {self.input_folder}")
         print(f"✅ Exported CAT findings to {self.output_file}")
         print(f"✅ All done!")
+
+
+class Logger:
+    LOG_FILE = "log.txt"
+
+    @staticmethod
+    def log(message: str):
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(Logger.LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"{timestamp} - {message}\n")
+        print(message)
 
 def pick_folders_gui():
     root = tk.Tk()
