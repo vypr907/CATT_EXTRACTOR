@@ -314,14 +314,16 @@ class NessusExtractor:
                     with zip_ref.open(file) as src, open(extracted_path, "wb") as dst:
                         dst.write(src.read())
                     extracted_files.append(extracted_path)
-                    print(f"[+] Extracted {file} from {zip_path.name}→ {extracted_path}")
+                    print(f"[+] Extracted {file} from {zip_path.name} → {extracted_path}")
+                    Logger.log(f"[+] Extracted {file} from {zip_path.name} → {extracted_path}")
                 else:
                     print(f"[-] Skipping {file} (not a .nessus file)")
         
         # Move processed ZIP to "processed" folder
         # TEMPORARILY DISABLING THE MOVE
-        #shutil.move(str(zip_path), self.processed_folder / zip_path.name)
-        #rint(f"[✓] Moved {zip_path.name} → {self.processed_folder.name}")
+        shutil.move(str(zip_path), self.processed_folder / zip_path.name)
+        print(f"[✓] Moved {zip_path.name} → {self.processed_folder.name}")
+        Logger.log(f"[✓] Moved {zip_path.name} → {self.processed_folder.name}")
         
         return extracted_files
 
