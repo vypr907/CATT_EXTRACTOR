@@ -61,9 +61,10 @@ class NessusParser:
 
         # --- Extract STIG UD + Finding ---
         # Example: "CASA-FW-000200 - The Cisco ASA must be configured ... : [FAILED]"
-        match = re.match(
-            r'^"([A-Z0-9\-]+)\s*-\s*(.+)"\s*: \[FAILED\]$',
-            clean_text, re.DOTALL
+        match = re.search(
+            r'^"([A-Z0-9\-]+)\s*-\s*(.+?)"\s*: \[FAILED\]',
+            clean_text, 
+            re.DOTALL
             )
         
         if match:
@@ -74,6 +75,7 @@ class NessusParser:
             Logger.log(f"✅ Regex matched STIG={stig}, FINDING starts with={finding[:40]}...")
         else:
             Logger.log("❌ Regex failed for description block")
+            Logger.log(f"Full description block:\n{clean_text}")
 
         # --- Extract Actual Value ---
         m_actual = re.search(r"Actual Value:\s*(.+)", clean_text, re.IGNORECASE | re.DOTALL)
@@ -120,7 +122,7 @@ class NessusParser:
                     severity = item.get("severity")
                     plugin_name = item.get("pluginName")
                     description = item.findtext("description", default="").strip()
-                    parsed = NessusParser.parse_descript_block(description)
+                    parsed = NessusParser.parse_descript_block(description) # maybe move to after the "only process FAILED" block?
 
                     # ----- Compliance findings ---
                     compliance_ref = (item.findtext("{*}compliance-reference") or "").strip()
@@ -194,11 +196,13 @@ class NessusToExcelExporter:
         '''Process all files and export CAT:II findings to Excel.'''
         if not self.files:
             print(f"No Nessus files found in {self.input_folder}")
+            Logger.log(f"No Nessus files found in {self.input_folder}")
             return
         
         with pd.ExcelWriter(self.output_file, engine='openpyxl') as writer:
             any_written = False
             print(f"⚙️  Processing Nessus files in {self.input_folder}...")
+            Logger.log(f"⚙️  Processing Nessus files in {self.input_folder}...")
 
             for filepath in self.files:
                 try:
@@ -209,11 +213,15 @@ class NessusToExcelExporter:
                         # Use filename as sheet name, limited to 31 characters
                         sheet_name = os.path.splitext(os.path.basename(filepath))[0][:31]
                         df.to_excel(writer, sheet_name=sheet_name, index=False)
+                        any_written = True
                         print(f"✅  Processed {filepath}, found {len(df)} findings (CAT {','.join(self.cat_lvls)}")
+                        Logger.log(f"✅  Processed {filepath}, found {len(df)} findings (CAT {','.join(self.cat_lvls)}")
                     else:
                         print(f"ℹ️  No CAT {','.join(self.cat_lvls)} findings in {filepath}")
+                        Logger.log(f"ℹ️  No CAT {','.join(self.cat_lvls)} findings in {filepath}")
                 except Exception as e:
                     print(f"❌ Error processing {filepath}: {e}")
+                    Logger.log(f"❌ Error processing {filepath}: {e}")
                     continue
             if not any_written:
                 placeholder_df = pd.DataFrame(
@@ -225,8 +233,10 @@ class NessusToExcelExporter:
                 )
                 placeholder_df.to_excel(writer, sheet_name="No_Findings", index=False)
                 print("⚠️  No findings found in any file. Wrote placeholder sheet")
+                Logger.log("⚠️  No findings found in any file. Wrote placeholder sheet")
 
         print(f"\n🎉 Finished! Findings (CAT {','.join(self.cat_lvls)}) saved in {self.output_file}")
+        Logger.log(f"🎉 Finished! Findings (CAT {','.join(self.cat_lvls)}) saved in {self.output_file}")
 
 class NessusExtractor:
     '''
@@ -252,6 +262,7 @@ class NessusExtractor:
         self.destination_folder.mkdir(parents=True, exist_ok=True)
         self.processed_folder.mkdir(parents=True, exist_ok=True)
         print(f"⚙️  NessusExtractor initialized...")
+        Logger.log(f"⚙️  NessusExtractor initialized...")
 
     def _friendly_name(self, zip_path: Path) -> str:
         '''
@@ -308,13 +319,15 @@ class NessusExtractor:
         Returns a list of extracted file paths.
         '''
         print(f"⚙️  Starting Nessus Extraction...")
+        Logger.log(f"⚙️  Starting Nessus Extraction...")
 
         all_extracted_files = []
 
         for zip_path in self.source_folder.glob("*.zip"):
             all_extracted_files.extend(self._process_zip(zip_path))
 
-        print("✅ Nessus extraction complete.")    
+        print("✅ Nessus extraction complete.")
+        Logger.log("✅ Nessus extraction complete.")
         return all_extracted_files
     
 
@@ -330,10 +343,12 @@ class NessusWorkflow:
 
     def run(self):
         print(f"📂 Starting Nessus workflow...")
+        Logger.log(f"📂 Starting Nessus workflow...")
         # Step 1: Extract .nessus files from ZIP files if required
         zip_files = list(self.input_folder.glob("*.zip"))
         if zip_files: #only extract if zips are present
             print(f"📦 Found {len(zip_files)} ZIP files to extract. Extracting from {self.input_folder}...")
+            Logger.log(f"📦 Found {len(zip_files)} ZIP files to extract. Extracting from {self.input_folder}...") 
             extracted_folder = self.input_folder / "extracted_nessus"
             extracted_folder.mkdir(exist_ok=True)
             extractor = NessusExtractor(self.input_folder, extracted_folder)
@@ -341,15 +356,19 @@ class NessusWorkflow:
             self.input_folder = extracted_folder
         else:
             print(f"ℹ️ No ZIP files found in {self.input_folder}, skipping extraction.")
+            Logger.log(f"ℹ️ No ZIP files found in {self.input_folder}, skipping extraction.")
 
         # Step 2: Export CAT findings to Excel
-        print(f"📑 Processing Nessus files in {self.input_folder}...")
+        nessus_files = list(extracted_folder.glob("*.nessus"))
+        print(f"📑 Processing {len(nessus_files)} Nessus files...")
+        Logger.log(f"📑 Processing {len(nessus_files)} Nessus files...") 
         exporter = NessusToExcelExporter(self.input_folder, self.output_file, self.cat_lvls)
         exporter.run()
 
         print(f"✅ Finished processing Nessus files in {self.input_folder}")
         print(f"✅ Exported CAT findings to {self.output_file}")
         print(f"✅ All done!")
+        Logger.log(f"✅ All done! Finished processing Nessus files in {self.input_folder}, and exported CAT findings to {self.output_file}.")
 
 
 class Logger:
@@ -360,7 +379,7 @@ class Logger:
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with open(Logger.LOG_FILE, "a", encoding="utf-8") as f:
             f.write(f"{timestamp} - {message}\n")
-        print(message)
+        #print(message)
 
 def pick_folders_gui():
     root = tk.Tk()

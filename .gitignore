@@ -1,5 +1,6 @@
-# Ignore resultant Excel files
+# Ignore resultant Excel/log files
 *.xlsx
+*.txt
 
 # Ignore .env files
 .env
