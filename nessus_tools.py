@@ -136,6 +136,18 @@ class NessusParser:
                         #Logger.log(f"Compliance check {compliance_result} - going to next item.") #NOT NEEDED
                         continue #skips to next item
 
+                    # Extract actual CAT level from compliance ref
+                    actual_cat = ""
+                    for part in compliance_ref.split(","):
+                        kv = [p.strip() for p in part.split("|", 1)]
+                        if len(kv) == 2 and kv[0].upper() == "CAT":
+                            actual_cat = kv[1].upper()
+                            break
+
+                    # Skip if it's not one of the requested CAT levels
+                    if f"CAT|{actual_cat}" not in cat_lvls:
+                        Logger.log(f" Skipped finding (CAT {actual_cat} not in requested levels) Host={hostname}, Plugin={plugin_id}")
+                        continue #skips to next item
 
                     # Check if any requested CAT level is present in the compliance result
                     matched = False
@@ -148,7 +160,7 @@ class NessusParser:
                             findings.append({
                                 "Hostname": hostname,
                                 "Plugin ID": plugin_id,
-                                "CAT": cat_lvl.split("|")[1],
+                                "CAT": actual_cat,
                                 "Severity": severity,
                                 "Result": compliance_result,
                                 "STIG": parsed["STIG"],
@@ -160,7 +172,7 @@ class NessusParser:
                                 "Pasteable": parsed["Pasteable"],
                                 "Compliance Reference": compliance_ref.strip(),
                             })
-                            Logger.log(f"✅ Added finding from {hostname} (Plugin {plugin_id}, {cat_lvl})")
+                            Logger.log(f"✅ Added finding from {hostname} (Plugin {plugin_id}, {actual_cat})")
                             break
 
                         if not matched:
