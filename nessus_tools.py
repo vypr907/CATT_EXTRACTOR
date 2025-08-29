@@ -11,6 +11,9 @@ import re
 import shutil
 import datetime
 import time
+from openpyxl import load_workbook
+from openpyxl.styles import Alignment, Font
+from openpyxl.utils import get_column_letter
 
 
 class NessusParser:
@@ -168,7 +171,7 @@ class NessusParser:
                                 "Actual Value": parsed["Actual Value"],
                                 "Short Desc": parsed["Short Desc"],
                                 "Plugin Name": plugin_name,
-                                "Description": description.strip(),
+                                #"Description": description.strip(),
                                 "Pasteable": parsed["Pasteable"],
                                 "Compliance Reference": compliance_ref.strip(),
                             })
@@ -234,6 +237,11 @@ class NessusToExcelExporter:
                     fn = os.path.splitext(os.path.basename(filepath))[0]
                     
                     if not df.empty:
+                        # Add a blank "Comments" column
+                        df["Comments"] = ""
+                        # Reorder to make sure Comments is at the end
+                        df = df[[*df.columns.drop("Comments"), "Comments"]]
+
                         # Use filename as sheet name, limited to 31 characters
                         sheet_name = os.path.splitext(os.path.basename(filepath))[0][:31]
                         df.to_excel(writer, sheet_name=sheet_name, index=False)
@@ -258,6 +266,33 @@ class NessusToExcelExporter:
                 placeholder_df.to_excel(writer, sheet_name="No_Findings", index=False)
                 print("⚠️  No findings found in any file. Wrote placeholder sheet")
                 Logger.log("⚠️  No findings found in any file. Wrote placeholder sheet")
+
+        # 🔹 Post-process with openpyxl for Wrap Text
+        wb = load_workbook(self.output_file)
+        for ws in wb.worksheets:
+            # Freeze top row
+            ws.freeze_panes = "A2"
+
+            # Format head row: bold + centered
+            for cell in ws[1]:
+                cell.font = Font(bold=True)
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+
+            # Auto column width + wrap text
+            for col_idx, col_cells in enumerate(ws.columns, 1):
+                max_length = 0
+                col_letter = get_column_letter(col_idx)
+                for cell in col_cells:
+                    cell.alignment = Alignment(wrap_text=True)
+                    try:
+                        if cell.value:
+                            max_length = max(max_length, len(str(cell.value)))
+                    except:
+                        pass
+                adjusted_width = min((max_length + 2), 60) # cap width so it's not crazy wide
+                ws.column_dimensions[col_letter].width = adjusted_width
+        wb.save(self.output_file)
+
 
         print(f"\n🎉 Finished! Findings (CAT {','.join(self.cat_lvls)}) saved in {self.output_file}")
         Logger.log(f"🎉 Finished! Findings (CAT {','.join(self.cat_lvls)}) saved in {self.output_file}")
@@ -371,16 +406,18 @@ class NessusWorkflow:
     def run(self):
         print(f"📂 Starting Nessus workflow...")
         Logger.log(f"📂 Starting Nessus workflow...")
+
+        # Always define extracted folder for subsequent runs of script
+        extracted_folder = self.input_folder / "extracted_nessus"
+        extracted_folder.mkdir(exist_ok=True)
+
         # Step 1: Extract .nessus files from ZIP files if required
         zip_files = list(self.input_folder.glob("*.zip"))
         if zip_files: #only extract if zips are present
             print(f"📦 Found {len(zip_files)} ZIP files to extract. Extracting from {self.input_folder}...")
-            Logger.log(f"📦 Found {len(zip_files)} ZIP files to extract. Extracting from {self.input_folder}...") 
-            extracted_folder = self.input_folder / "extracted_nessus"
-            extracted_folder.mkdir(exist_ok=True)
+            Logger.log(f"📦 Found {len(zip_files)} ZIP files to extract. Extracting from {self.input_folder}...")
             extractor = NessusExtractor(self.input_folder, extracted_folder)
             extractor.extract_all()
-            self.input_folder = extracted_folder
         else:
             print(f"ℹ️ No ZIP files found in {self.input_folder}, skipping extraction.")
             Logger.log(f"ℹ️ No ZIP files found in {self.input_folder}, skipping extraction.")
@@ -389,7 +426,7 @@ class NessusWorkflow:
         nessus_files = list(extracted_folder.glob("*.nessus"))
         print(f"📑 Processing {len(nessus_files)} Nessus files...")
         Logger.log(f"📑 Processing {len(nessus_files)} Nessus files...") 
-        exporter = NessusToExcelExporter(self.input_folder, self.output_file, self.cat_lvls)
+        exporter = NessusToExcelExporter(extracted_folder, self.output_file, self.cat_lvls)
         exporter.run()
 
         print(f"✅ Finished processing Nessus files in {self.input_folder}")
